@@ -74,6 +74,7 @@ export function createForest(U, barkTex, mobile) {
     if (t) { ring.position.set(t.x, t.baseY + .06, t.z); const s = Math.max(1.4, t.p.trunk * 3.2); ring.scale.set(s, s, s); }
   }
   function move(t, x, z, y) { t.x = x; t.z = z; t.baseY = y; t.group.position.set(x, y, z); if (ring.visible) select(t); }
+  function makeNoise32(seed) { return makeNoise3D(seed); }
 
   function* build(t, Q, groundAt, waterY) {
     const t0 = performance.now();
@@ -342,7 +343,6 @@ export function createForest(U, barkTex, mobile) {
     yield { p: 1, label: 'дерево #' + t.id + ' готово' };
     return t.stats;
   }
-  function makeNoise32(seed) { return makeNoise3D(seed); }
 
   function pick(o, d) {
     let best = null, bt = Infinity;
@@ -363,11 +363,17 @@ export function createForest(U, barkTex, mobile) {
   }
   function totals() {
     let wood = 0, leaf = 0, nodes = 0, branches = 0, leaves = 0, seg = 0, auto = false, ms = 0;
-    for (const t of trees) { wood += t.stats.woodTris; leaf += t.stats.leafTris; nodes += t.stats.nodes; branches += t.stats.branches; leaves += t.stats.leaves; seg = Math.max(seg, t.stats.seg); auto = auto || t.stats.auto; ms += t.stats.ms; }
+    for (const t of trees) {
+      wood += t.stats.woodTris; leaf += t.stats.leafTris; nodes += t.stats.nodes;
+      branches += t.stats.branches; leaves += t.stats.leaves;
+      seg = Math.max(seg, t.stats.seg); auto = auto || t.stats.auto; ms += t.stats.ms;
+    }
     return { woodTris: wood, leafTris: leaf, nodes, branches, leaves, seg, auto, ms };
   }
-  return { group, trees, newTree, drop, build, select, move, pick, totals, leafTex, leafMats, barkMat, litterMat, ring,
+  return {
+    group, trees, newTree, drop, build, select, move, pick, totals, leafTex, leafMats, barkMat, litterMat, ring,
     setBark(t) { barkMat.map = t.map; barkMat.normalMap = t.normalMap; barkMat.roughnessMap = t.roughnessMap; barkMat.needsUpdate = true; },
     setWire(v) { barkMat.wireframe = v; for (const k in leafMats) leafMats[k].wireframe = v; litterMat.wireframe = v; },
-    setSkeleton(v) { for (const t of trees) if (t.skel) t.skel.visible = v; } };
+    setSkeleton(v) { for (const t of trees) if (t.skel) t.skel.visible = v; }
+  };
 }
