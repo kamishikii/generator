@@ -94,6 +94,20 @@
     </nav>
   </aside>
 </div>
+
+<script>
+/* ФИКС ПАДЕНИЯ: main.js в конце boot() пишет "water = { mesh: null }",
+   но переменная water нигде не объявлена -> в модуле (strict mode) это
+   ReferenceError и всё приложение умирает. Объявляем её заранее глобально,
+   тогда присваивание проходит и boot() доезжает до конца. */
+var water = null;
+</script>
+<script>
+/* страховка: любая ошибка теперь видна на экране красной плашкой */
+function showErr(t){var d=document.getElementById('errbox');if(!d){d=document.createElement('pre');d.id='errbox';d.style.cssText='position:fixed;left:8px;right:8px;bottom:8px;z-index:99999;background:#500;color:#fff;font:12px/1.4 monospace;padding:10px;border-radius:8px;max-height:45vh;overflow:auto;white-space:pre-wrap';document.body.appendChild(d);}d.textContent=t;}
+window.addEventListener('error',function(e){showErr(e.message+'\n'+(e.error&&e.error.stack||''));});
+window.addEventListener('unhandledrejection',function(e){showErr('Promise: '+(e.reason&&e.reason.message||e.reason));});
+</script>
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>
