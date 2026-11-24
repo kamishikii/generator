@@ -4,45 +4,42 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0a1411">
-<title>ДРЕВО · мир: деревья, ландшафт, вода</title>
+<title>ДРЕВО · мир, модели, архитектура</title>
 </head>
 <body>
 <div id="app">
   <header class="topbar">
     <div class="brand">
-      <svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <svg width="26" height="26" viewBox="0 0 32 32" fill="none" aria-hidden="true">
         <path d="M16 29V15" stroke="#9ef01a" stroke-width="2.2" stroke-linecap="round"/>
         <path d="M16 20l-6-5M16 17l6-5" stroke="#2fbf6a" stroke-width="1.9" stroke-linecap="round"/>
         <path d="M16 15c-5 0-8-3.4-8-7 0-3 2.6-5.4 5.4-4.6C14 1.7 16.6 1 18.6 2.4c3-1 5.4 1.6 5.4 4.6 0 4-3.6 8-8 8z" fill="rgba(47,191,106,.28)" stroke="#9ef01a" stroke-width="1.6"/>
         <circle cx="25.5" cy="6.5" r="2.6" fill="#ffb020"/>
       </svg>
-      <div><h1>ДРЕВО</h1><small>world lab</small></div>
+      <div><h1>ДРЕВО</h1><small id="modeTag">world</small></div>
     </div>
     <div class="counter">
-      <div class="tris"><b id="triNum">0</b><span>треугольников мира</span></div>
-      <div class="budget"><div class="bar"><div class="fill" id="budgetFill"></div></div>
-        <label><span>бюджет</span><span id="budgetPct">0%</span></label></div>
+      <div class="tris"><b id="triNum">0</b><span id="triLabel">треугольников</span></div>
       <button class="iconbtn on" id="soundBtn" aria-pressed="true"><i class="dot"></i><span class="txt">ЗВУК</span></button>
     </div>
   </header>
 
   <main class="stage" id="stage">
     <canvas id="gl"></canvas>
-    <div class="ov chip" id="presetChip">вид: <b id="presetName">Дуб</b> · seed <b id="seedName">1337</b> · <b id="treeCount">1</b> дер.</div>
+    <div class="ov chip" id="infoChip">мир · seed <b id="seedName">1337</b> · <b id="cntChip">4</b></div>
     <div class="ov chip" id="growChip"><i class="spin"></i><span id="growText">рост…</span><b id="growPct"></b></div>
     <div class="ov chip" id="selChip"><span id="selText">дерево #1</span>
-      <button class="mini" id="selAll">ко всем</button>
-      <button class="mini" id="selDup">дубль</button>
-      <button class="mini danger" id="selDel">удалить</button>
-      <button class="mini" id="selNone">снять</button>
+      <button class="mini" id="selAll">ко всем</button><button class="mini" id="selDup">дубль</button>
+      <button class="mini danger" id="selDel">удалить</button><button class="mini" id="selNone">снять</button>
     </div>
 
     <div class="stage-tools">
       <button class="toolbtn hot" id="btnViewer" title="Полный экран">⤢</button>
+      <button class="toolbtn" id="btnClean" title="Чистый просмотр">👁</button>
       <button class="toolbtn" id="btnCam" title="Сброс камеры">⟲</button>
       <button class="toolbtn" id="btnWire" title="Каркас">◈</button>
       <button class="toolbtn" id="btnPlant" title="Посадить дерево">✚</button>
-      <button class="toolbtn" id="btnDice2" title="Новый мир">⚄</button>
+      <button class="toolbtn" id="btnDice2" title="Перегенерировать">⚄</button>
     </div>
 
     <section class="ov panel" id="hud">
@@ -55,59 +52,39 @@
         <div class="row"><span>трис сцены</span><b id="mTris">—</b></div>
         <div class="row opt"><span>draw calls</span><b id="mCalls">—</b></div>
         <div class="sep"></div>
-        <div class="row"><span>деревьев</span><b id="mTrees">—</b></div>
-        <div class="row"><span>узлов / ветвей</span><b id="mNodes">—</b></div>
-        <div class="row"><span>шаг роста</span><b id="mSeg">—</b></div>
-        <div class="row"><span>листьев</span><b id="mLeaves">—</b></div>
-        <div class="row"><span>травы / цветов</span><b id="mGrass">—</b></div>
-        <div class="row opt"><span>трис ландшафта</span><b id="mLand">—</b></div>
-        <div class="row opt"><span>вода</span><b id="mWater">—</b></div>
+        <div class="row"><span id="lA">деревьев</span><b id="mA">—</b></div>
+        <div class="row"><span id="lB">узлов</span><b id="mB">—</b></div>
+        <div class="row"><span id="lC">листьев</span><b id="mC">—</b></div>
+        <div class="row"><span id="lD">травы</span><b id="mD">—</b></div>
+        <div class="row opt"><span id="lE">земля</span><b id="mE">—</b></div>
         <div class="row opt"><span>генерация</span><b id="mGen">—</b></div>
         <div class="sep"></div>
-        <div class="row"><span>ветер / порыв</span><b id="mWind">—</b></div>
+        <div class="row"><span>ветер</span><b id="mWind">—</b></div>
         <div class="gust" id="gust"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
       </div>
     </section>
 
-    <div class="ov" id="hint"><div class="chip"><span id="hintText">тащи дерево пальцем · два пальца — зум</span></div></div>
+    <div class="ov" id="hint"><div class="chip"><span id="hintText">тащи дерево пальцем</span></div></div>
     <div class="ov" id="toast"></div>
     <div id="dock"></div>
+    <button id="cleanExit" title="Вернуть интерфейс">◱</button>
 
     <div id="boot"><div>
-      <svg width="112" height="112" viewBox="0 0 120 120" fill="none">
+      <svg width="104" height="104" viewBox="0 0 120 120" fill="none">
         <path class="dash" d="M60 112V60M60 78l-20-16M60 70l20-16M60 60c-16 0-26-11-26-23 0-10 9-18 18-15 4-6 12-8 18-3 10-3 18 5 18 15 0 13-12 26-28 26z" stroke="#9ef01a" stroke-width="2.4" stroke-linecap="round"/>
-      </svg><p>инициализация мира</p></div></div>
+      </svg><p>инициализация</p></div></div>
     <div id="fallback"><div><canvas id="fbCanvas" width="520" height="360"></canvas><p id="fbMsg"></p></div></div>
   </main>
 
   <aside class="rail" id="rail">
-    <div class="seedbox">
-      <div class="lbl">сид мира</div>
-      <div class="stepper">
-        <button id="seedMinus">−</button><div class="val" id="seedVal">1337</div>
-        <button id="seedPlus">+</button><button id="seedDice">⚄</button>
-      </div>
-    </div>
-    <div class="presets" id="presets"></div>
-    <div class="groups" id="groups"></div>
-    <div class="actions">
-      <button class="btn primary wide" id="btnRandom">✦ Новый мир</button>
-      <button class="btn" id="btnReset">↺ Сброс</button>
-      <button class="btn" id="btnPng">▣ Кадр PNG</button>
-      <button class="btn wide" id="btnWorld">↓ Скачать 3D-мир</button>
-    </div>
-    <div class="exp">
-      <div class="lbl">что класть в экспорт</div>
-      <div class="exptoggles" id="expToggles"></div>
-      <div class="sel" style="margin-top:8px"><select id="expFormat">
-        <option value="glb">GLB (glTF 2.0, с текстурами)</option>
-        <option value="obj">OBJ (геометрия)</option>
-      </select></div>
-      <div class="hint" id="expInfo">—</div>
-    </div>
-    <div class="foot">
-      Мир генерируется целиком на устройстве: лес из отдельных деревьев (каждое со своим сидом), рельеф fBm с доменным варпом, вырезанное русло реки, озёра по уровню воды, трава куртинами, камни, цветы. Дерево можно <b>перетащить пальцем</b> — оно само сядет на рельеф.
-    </div>
+    <div class="quick" id="quick"></div>
+    <div class="panes" id="panes"></div>
+    <div class="actions" id="actions"></div>
+    <nav class="tabbar" id="tabbar">
+      <button class="tab on" data-tab="world"><b>МИР</b><span>ландшафт · лес</span></button>
+      <button class="tab" data-tab="human"><b>МОДЕЛИ</b><span>человек</span></button>
+      <button class="tab" data-tab="arch"><b>АРХИТЕКТУРА</b><span>здания</span></button>
+    </nav>
   </aside>
 </div>
 <script type="module" src="/src/main.js"></script>
