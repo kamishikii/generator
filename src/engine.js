@@ -1,4 +1,3 @@
-    
 import * as THREE from 'three';
 import { clamp, lerp } from './noise.js';
 
