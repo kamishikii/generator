@@ -285,4 +285,4 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
     get heightTex() { return heightTex; }, get hMin() { return hMin; }, get hMax() { return hMax; },
     setWire(v) { landMat.wireframe = v; grassMat.wireframe = v; rockMat.wireframe = v; flowerMat.wireframe = v; }
   };
-        }
+}
