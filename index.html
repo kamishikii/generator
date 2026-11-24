@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0a1411">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>ДРЕВО · лаборатория процедурных деревьев</title>
+<title>ДРЕВО · лаборатория процедурных деревьев и ландшафта</title>
 </head>
 <body>
 <div id="app">
@@ -18,7 +17,7 @@
         <path d="M16 15c-5 0-8-3.4-8-7 0-3 2.6-5.4 5.4-4.6C14 1.7 16.6 1 18.6 2.4c3-1 5.4 1.6 5.4 4.6 0 4-3.6 8-8 8z" fill="rgba(47,191,106,.28)" stroke="#9ef01a" stroke-width="1.6"/>
         <circle cx="25.5" cy="6.5" r="2.6" fill="#ffb020"/>
       </svg>
-      <div><h1>ДРЕВО</h1><small>procedural tree lab</small></div>
+      <div><h1>ДРЕВО</h1><small>tree &amp; terrain lab</small></div>
     </div>
     <div class="counter">
       <div class="tris"><b id="triNum">0</b><span>треугольников</span></div>
@@ -27,45 +26,57 @@
         <label><span>бюджет</span><span id="budgetPct">0%</span></label>
       </div>
       <button class="iconbtn on" id="soundBtn" aria-pressed="true"><i class="dot"></i><span class="txt">ЗВУК</span></button>
-      <button class="iconbtn" id="fsBtn" title="На весь экран">⛶</button>
     </div>
   </header>
 
   <main class="stage" id="stage">
     <canvas id="gl"></canvas>
+
     <div class="ov chip" id="presetChip">вид: <b id="presetName">Дуб</b> · seed <b id="seedName">1337</b></div>
-    <div class="ov chip" id="growChip"><i class="spin"></i><span id="growText">рост дерева…</span></div>
+    <div class="ov chip" id="growChip"><i class="spin"></i><span id="growText">рост…</span><b id="growPct"></b></div>
 
     <div class="stage-tools">
+      <button class="toolbtn hot" id="btnViewer" title="Полноэкранный просмотр" aria-label="Полноэкранный просмотр">⤢</button>
       <button class="toolbtn" id="btnCam" title="Сбросить камеру" aria-label="Сбросить камеру">⟲</button>
       <button class="toolbtn" id="btnWire" title="Каркас" aria-label="Каркас">◈</button>
-      <button class="toolbtn hot" id="btnDice2" title="Новое дерево" aria-label="Новое дерево">⚄</button>
+      <button class="toolbtn" id="btnDice2" title="Новое дерево" aria-label="Новое дерево">⚄</button>
     </div>
 
-    <div class="ov" id="hud">
-      <h4>телеметрия</h4>
-      <div class="row"><span>FPS</span><b id="mFps">—</b></div>
-      <div class="row"><span>кадр</span><b id="mMs">—</b></div>
-      <div class="row"><span>трис сцены</span><b id="mTris">—</b></div>
-      <div class="row opt"><span>draw calls</span><b id="mCalls">—</b></div>
-      <div class="sep"></div>
-      <div class="row"><span>узлов / ветвей</span><b id="mNodes">—</b></div>
-      <div class="row"><span>листьев</span><b id="mLeaves">—</b></div>
-      <div class="row opt"><span>генерация</span><b id="mGen">—</b></div>
-      <div class="sep"></div>
-      <div class="row"><span>ветер / порыв</span><b id="mWind">—</b></div>
-      <div class="gust" id="gust"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-    </div>
+    <section class="ov panel" id="hud">
+      <button class="hudhead" id="hudToggle" aria-expanded="true">
+        <span class="ttl">телеметрия</span>
+        <span class="mini" id="hudMini">—</span>
+        <i class="chev">▾</i>
+      </button>
+      <div class="hudbody">
+        <div class="row"><span>FPS</span><b id="mFps">—</b></div>
+        <div class="row"><span>кадр</span><b id="mMs">—</b></div>
+        <div class="row"><span>трис сцены</span><b id="mTris">—</b></div>
+        <div class="row opt"><span>draw calls</span><b id="mCalls">—</b></div>
+        <div class="sep"></div>
+        <div class="row"><span>узлов / ветвей</span><b id="mNodes">—</b></div>
+        <div class="row"><span>шаг роста</span><b id="mSeg">—</b></div>
+        <div class="row"><span>листьев</span><b id="mLeaves">—</b></div>
+        <div class="row"><span>травы / цветов</span><b id="mGrass">—</b></div>
+        <div class="row opt"><span>трис ландшафта</span><b id="mLand">—</b></div>
+        <div class="row opt"><span>генерация</span><b id="mGen">—</b></div>
+        <div class="sep"></div>
+        <div class="row"><span>ветер / порыв</span><b id="mWind">—</b></div>
+        <div class="gust" id="gust"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+    </section>
 
     <div class="ov" id="hint"><div class="chip"><span id="hintText">палец — орбита · два пальца — зум</span></div></div>
     <div class="ov" id="toast"></div>
+
+    <div id="dock"></div>
 
     <div id="boot">
       <div>
         <svg width="112" height="112" viewBox="0 0 120 120" fill="none">
           <path class="dash" d="M60 112V60M60 78l-20-16M60 70l20-16M60 60c-16 0-26-11-26-23 0-10 9-18 18-15 4-6 12-8 18-3 10-3 18 5 18 15 0 13-12 26-28 26z" stroke="#9ef01a" stroke-width="2.4" stroke-linecap="round"/>
         </svg>
-        <p>инициализация webgl</p>
+        <p>инициализация сцены</p>
       </div>
     </div>
     <div id="fallback"><div><canvas id="fbCanvas" width="520" height="360"></canvas><p id="fbMsg"></p></div></div>
@@ -84,13 +95,14 @@
     <div class="presets" id="presets"></div>
     <div class="groups" id="groups"></div>
     <div class="actions">
-      <button class="btn primary wide" id="btnRandom">✦ Вырастить новое дерево</button>
+      <button class="btn primary wide" id="btnRandom">✦ Новое дерево и ландшафт</button>
       <button class="btn" id="btnReset">↺ Сброс</button>
       <button class="btn" id="btnPng">▣ Кадр PNG</button>
-      <button class="btn wide" id="btnObj">↓ Скачать модель .OBJ</button>
+      <button class="btn" id="btnObj">↓ OBJ дерева</button>
+      <button class="btn" id="btnObjLand">↓ OBJ ландшафта</button>
     </div>
     <div class="foot">
-      Скелет растёт алгоритмом <b>space colonization</b>: точки притяжения в кроне тянут ветви, радиусы считаются по трубной модели. Ствол — трубы с параллельным переносом кадра, листва — инстансированные карточки. Всё генерируется на устройстве, ни одного загруженного меша и ни одного запроса в сеть.
+      Скелет — <b>space colonization</b> с автоподбором шага под бюджет узлов. Кора: карта высот → альбедо + нормали, борозды вырезаны прямо в геометрии, у развилок утолщения-воротнички, у основания корневые лапы, мох вершинным цветом. Ландшафт — fBm с доменным варпом, трава инстансами по уклонам и пятнам влажности.
     </div>
   </aside>
 </div>
