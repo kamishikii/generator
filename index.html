@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0a1411">
-<title>ДРЕВО · мир, модели, архитектура</title>
+<title>ДРЕВО · редактор мира</title>
 </head>
 <body>
 <div id="app">
@@ -28,18 +28,25 @@
     <canvas id="gl"></canvas>
     <div class="ov chip" id="infoChip">мир · seed <b id="seedName">1337</b> · <b id="cntChip">4</b></div>
     <div class="ov chip" id="growChip"><i class="spin"></i><span id="growText">рост…</span><b id="growPct"></b></div>
-    <div class="ov chip" id="selChip"><span id="selText">дерево #1</span>
+    <div class="ov chip" id="selChip"><span id="selText">объект</span>
+      <button class="mini" id="selRotL">⟲</button><button class="mini" id="selRotR">⟳</button>
+      <button class="mini" id="selSm">−</button><button class="mini" id="selBg">+</button>
       <button class="mini" id="selAll">ко всем</button><button class="mini" id="selDup">дубль</button>
       <button class="mini danger" id="selDel">удалить</button><button class="mini" id="selNone">снять</button>
     </div>
 
     <div class="stage-tools">
       <button class="toolbtn hot" id="btnViewer" title="Полный экран">⤢</button>
-      <button class="toolbtn" id="btnClean" title="Чистый просмотр">👁</button>
       <button class="toolbtn" id="btnCam" title="Сброс камеры">⟲</button>
       <button class="toolbtn" id="btnWire" title="Каркас">◈</button>
-      <button class="toolbtn" id="btnPlant" title="Посадить дерево">✚</button>
       <button class="toolbtn" id="btnDice2" title="Перегенерировать">⚄</button>
+    </div>
+
+    <div id="toolRail"></div>
+    <div id="brushBar"></div>
+    <div id="modeBtns">
+      <button class="mbtn" id="btnEdit"><b>РЕДАКТОР</b><span>кисти по земле</span></button>
+      <button class="mbtn" id="btnClean"><b>ПРОСМОТР</b><span>скрыть всё</span></button>
     </div>
 
     <section class="ov panel" id="hud">
@@ -56,15 +63,15 @@
         <div class="row"><span id="lB">узлов</span><b id="mB">—</b></div>
         <div class="row"><span id="lC">листьев</span><b id="mC">—</b></div>
         <div class="row"><span id="lD">травы</span><b id="mD">—</b></div>
-        <div class="row opt"><span id="lE">земля</span><b id="mE">—</b></div>
+        <div class="row opt"><span id="lE">вода</span><b id="mE">—</b></div>
         <div class="row opt"><span>генерация</span><b id="mGen">—</b></div>
         <div class="sep"></div>
-        <div class="row"><span>ветер</span><b id="mWind">—</b></div>
+        <div class="row"><span>кисть</span><b id="mBrush">—</b></div>
         <div class="gust" id="gust"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
       </div>
     </section>
 
-    <div class="ov" id="hint"><div class="chip"><span id="hintText">тащи дерево пальцем</span></div></div>
+    <div class="ov" id="hint"><div class="chip"><span id="hintText">РЕДАКТОР — кисти по земле</span></div></div>
     <div class="ov" id="toast"></div>
     <div id="dock"></div>
     <button id="cleanExit" title="Вернуть интерфейс">◱</button>
@@ -81,7 +88,7 @@
     <div class="panes" id="panes"></div>
     <div class="actions" id="actions"></div>
     <nav class="tabbar" id="tabbar">
-      <button class="tab on" data-tab="world"><b>МИР</b><span>ландшафт · лес</span></button>
+      <button class="tab on" data-tab="world"><b>МИР</b><span>ландшафт</span></button>
       <button class="tab" data-tab="human"><b>МОДЕЛИ</b><span>человек</span></button>
       <button class="tab" data-tab="arch"><b>АРХИТЕКТУРА</b><span>здания</span></button>
     </nav>
