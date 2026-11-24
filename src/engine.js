@@ -345,4 +345,13 @@ export function createEngine(canvas, stage, U, opts) {
     compMat.uniforms.uBloom.value = P.bloom;
     compMat.uniforms.uRays.value = P.rays ? .6 : 0;
     compMat.uniforms.uTime.value = now * .001;
-    quad.material = compMat; renderer.setRenderTarget(nul
+    quad.material = compMat; renderer.setRenderTarget(null); renderer.clear(); renderer.render(postScene, postCam);
+  }
+
+  return {
+    THREE, renderer, scene, camera, cam, key, pollen, flies, hooks,
+    applySky, resize, setQuality, render, updateCamera, resetCamera,
+    markShadows() { renderer.shadowMap.needsUpdate = true; },
+    setParticles(n, base) { pollen.geometry.setDrawRange(0, Math.round(n)); pollen.material.uniforms.uBase.value = base; flies.material.uniforms.uBase.value = base; }
+  };
+}
