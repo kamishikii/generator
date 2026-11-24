@@ -1,3 +1,4 @@
+
 import * as THREE from 'three';
 import { clamp, lerp, TAU, makeNoise3D, fbm } from './noise.js';
 import { eyeTexture } from './textures.js';
@@ -330,4 +331,35 @@ export function createHuman(tex) {
             const t = i / 5;
             pts.push({ p: V3(headC.x + side * rx * (.72 + t * .18), headC.y + ry * .3 - t * L, headC.z - rz * (.32 + t * .18)), w: .022 * H * hs * (1 - t * .45), d: .016 * H * hs * (1 - t * .4) });
           }
-          tube(aH, pts, 8, () => hairC,
+          tube(aH, pts, 8, () => hairC, 2);
+        }
+      }
+    }
+    yield { p: .88, label: 'глаза и волосы' };
+
+    for (const m of Object.values(meshes)) { if (m) { group.remove(m); m.geometry.dispose(); } }
+    meshes = {};
+    const add = (key, a, mat) => {
+      if (!a.p.length) return;
+      const g = geoOf(a), m = new THREE.Mesh(g, mat);
+      m.castShadow = key !== 'cornea'; m.receiveShadow = true; m.frustumCulled = false;
+      if (key === 'cornea') m.renderOrder = 2;
+      group.add(m); meshes[key] = m;
+      stats.tris = (stats.tris || 0) + g.index.count / 3;
+    };
+    stats.tris = 0; stats.verts = 0;
+    add('skin', aS, mats.skin); add('cloth', aC, mats.cloth); add('hair', aH, mats.hair);
+    add('eyes', aE, mats.eye); add('cornea', aG, mats.cornea);
+    for (const m of Object.values(meshes)) stats.verts += m.geometry.attributes.position.count;
+    stats.height = crownY; stats.ms = performance.now() - t0;
+    yield { p: 1, label: 'человек готов' };
+    return stats;
+  }
+  return {
+    group, build, stats,
+    get mats() { return mats; }, get meshes() { return meshes; },
+    get mesh() { return meshes.skin || meshes.cloth; },
+    setWire(v) { if (mats) for (const k of ['skin', 'cloth', 'hair']) mats[k].wireframe = v; },
+    dispose() { for (const m of Object.values(meshes)) { group.remove(m); m.geometry.dispose(); } meshes = {}; }
+  };
+}
