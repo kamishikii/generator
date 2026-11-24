@@ -26,8 +26,7 @@ export function pushMesh(out, geo, matrix, mat, name) {
 }
 export function pushInstanced(out, im, parentMatrix, cap, mat, name) {
   if (!im || !im.count) return;
-  const geo = im.geometry, pos = geo.attributes.position;
-  if (!pos) return;
+  const geo = im.geometry, pos = geo.attributes.position; if (!pos) return;
   const nor = geo.attributes.normal, uv = geo.attributes.uv, idx = idxOf(geo);
   const count = Math.min(im.count, cap), vn = pos.count;
   const P = new Float32Array(count * vn * 3), Nr = nor ? new Float32Array(count * vn * 3) : null;
@@ -67,10 +66,10 @@ export function collectWorld({ forest, terrain, water }, opt) {
   }
   terrain.group.updateMatrixWorld(true);
   if (opt.land && terrain.land) pushMesh(parts, terrain.land.geometry, terrain.land.matrixWorld, { key: 'land', color: [1, 1, 1], map: terrain.materials.landMat.map, normalMap: terrain.materials.landMat.normalMap, rough: 1 }, 'Terrain');
-  if (opt.rocks && terrain.rocks) pushInstanced(parts, terrain.rocks, terrain.rocks.matrixWorld, 400, { key: 'rock', color: [.66, .66, .63], map: terrain.materials.rockMat.map, rough: .95 }, 'Rocks');
+  if (opt.rocks && terrain.rocks) pushInstanced(parts, terrain.rocks, terrain.rocks.matrixWorld, 400, { key: 'rock', color: [.66, .66, .63], map: terrain.materials.rockMat.map, normalMap: terrain.materials.rockMat.normalMap, rough: .95 }, 'Rocks');
   if (opt.grass && terrain.grass) pushInstanced(parts, terrain.grass, terrain.grass.matrixWorld, opt.grassCap, { key: 'grass', color: [1, 1, 1], rough: .8, doubleSided: true }, 'Grass');
   if (opt.grass && terrain.flowers) pushInstanced(parts, terrain.flowers, terrain.flowers.matrixWorld, 2500, { key: 'flower', color: [1, 1, 1], map: terrain.materials.flowerMat.map, alpha: .4, rough: .7, doubleSided: true }, 'Flowers');
-  if (opt.water && water.mesh.visible) {
+  if (opt.water && water && water.mesh && water.mesh.visible) {
     water.mesh.updateMatrixWorld(true);
     pushMesh(parts, water.mesh.geometry, water.mesh.matrixWorld, { key: 'water', color: [.12, .35, .45], rough: .12, doubleSided: true, opacity: .82 }, 'Water');
   }
@@ -82,7 +81,7 @@ export function partsStats(parts) {
   return { verts: v, tris: t, meshes: parts.length };
 }
 export function toOBJ(parts, meta) {
-  const L = ['# DREVO export', '# ' + meta];
+  const L = ['# DREVO world export', '# ' + meta];
   let off = 0;
   for (const p of parts) {
     L.push('o ' + p.name);
@@ -99,7 +98,7 @@ export function toOBJ(parts, meta) {
   return L.join('\n');
 }
 export async function toGLB(parts, meta, onProgress) {
-  const json = { asset: { version: '2.0', generator: 'DREVO lab', copyright: meta }, scene: 0, scenes: [{ nodes: [] }], nodes: [], meshes: [], materials: [], accessors: [], bufferViews: [], buffers: [], images: [], textures: [], samplers: [{ magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 }] };
+  const json = { asset: { version: '2.0', generator: 'DREVO world lab', copyright: meta }, scene: 0, scenes: [{ nodes: [] }], nodes: [], meshes: [], materials: [], accessors: [], bufferViews: [], buffers: [], images: [], textures: [], samplers: [{ magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 }] };
   const chunks = []; let byteLen = 0;
   const align = () => { const pad = (4 - (byteLen % 4)) % 4; if (pad) { chunks.push(new Uint8Array(pad)); byteLen += pad; } };
   function view(arr, target) {
