@@ -1,4 +1,3 @@
-
 import './style.css';
 import * as THREE from 'three';
 import { clamp, lerp, mulberry32, makeNoise3D } from './noise.js';
