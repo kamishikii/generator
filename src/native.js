@@ -21,37 +21,33 @@ const CHUNK = 2 * 1024 * 1024;
 export async function saveArtifact({ filename, text, base64, blob, mime, title, onProgress }) {
   const data = base64 || text;
   if (NATIVE && data) {
-    let FS;
-    try { FS = await import('@capacitor/filesystem'); }
-    catch (e) { FS = null; }
+    let FS = null;
+    try { FS = await import('@capacitor/filesystem'); } catch (e) { FS = null; }
     if (FS) {
       const { Filesystem, Directory, Encoding } = FS;
       const enc = base64 ? Encoding.Base64 : Encoding.UTF8;
       const path = 'drevo-' + Date.now() + '-' + filename;
-      try {
-        await Filesystem.writeFile({ path, data: data.slice(0, CHUNK), directory: Directory.Cache, encoding: enc, recursive: true });
+      const writeChunks = async (dir, p) => {
+        await Filesystem.writeFile({ path: p, data: data.slice(0, CHUNK), directory: dir, encoding: enc, recursive: true });
         for (let i = CHUNK; i < data.length; i += CHUNK) {
-          await Filesystem.appendFile({ path, data: data.slice(i, i + CHUNK), directory: Directory.Cache, encoding: enc });
+          await Filesystem.appendFile({ path: p, data: data.slice(i, i + CHUNK), directory: dir, encoding: enc });
           if (onProgress) onProgress(Math.min(1, (i + CHUNK) / data.length), 'запись файла');
         }
+      };
+      try {
+        await writeChunks(Directory.Cache, path);
         const res = await Filesystem.getUri({ path, directory: Directory.Cache });
         try {
           const { Share } = await import('@capacitor/share');
           await Share.share({ title, files: [res.uri], url: res.uri, dialogTitle: title });
           return 'Отправлено: ' + filename;
         } catch (e) {
-          const dir = 'DREVO/' + filename;
-          await Filesystem.writeFile({ path: dir, data: data.slice(0, CHUNK), directory: Directory.Documents, encoding: enc, recursive: true });
-          for (let i = CHUNK; i < data.length; i += CHUNK)
-            await Filesystem.appendFile({ path: dir, data: data.slice(i, i + CHUNK), directory: Directory.Documents, encoding: enc });
+          await writeChunks(Directory.Documents, 'DREVO/' + filename);
           return 'Сохранено в Documents/DREVO/' + filename;
         }
       } catch (e) {
         try {
-          const dir = 'DREVO/' + filename;
-          await Filesystem.writeFile({ path: dir, data: data.slice(0, CHUNK), directory: Directory.Documents, encoding: enc, recursive: true });
-          for (let i = CHUNK; i < data.length; i += CHUNK)
-            await Filesystem.appendFile({ path: dir, data: data.slice(i, i + CHUNK), directory: Directory.Documents, encoding: enc });
+          await writeChunks(Directory.Documents, 'DREVO/' + filename);
           return 'Сохранено в Documents/DREVO/' + filename;
         } catch (e2) { throw new Error('файловая система: ' + (e2.message || e2)); }
       }
