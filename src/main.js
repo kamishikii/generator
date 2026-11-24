@@ -1,3 +1,4 @@
+
 import './style.css';
 import * as THREE from 'three';
 import { clamp, lerp, mulberry32, makeNoise3D } from './noise.js';
@@ -272,4 +273,455 @@ function boot() {
       box.innerHTML = `<div class="head"><label>${i.l}</label></div>`;
       const s = document.createElement('div'); s.className = 'sel';
       const el = document.createElement('select');
-      i.op
+      i.opts.forEach(([v, n]) => { const o = document.createElement('option'); o.value = String(v); o.textContent = n; el.appendChild(o); });
+      s.appendChild(el); box.appendChild(s);
+      el.addEventListener('change', () => { setVal(i, isNaN(+el.value) ? el.value : +el.value); syncKey(i.k); Sound.tick(520); buzz('LIGHT'); onParam(i); });
+      (registry[i.k] = registry[i.k] || []).push({ item: i, el });
+    } else if (i.t === 'color') {
+      box.innerHTML = `<div class="head"><label>${i.l}</label></div>`;
+      const row = document.createElement('div'); row.className = 'colrow';
+      const el = document.createElement('input'); el.type = 'color'; const code = document.createElement('code');
+      row.append(el, code); box.appendChild(row);
+      el.addEventListener('input', () => { setVal(i, el.value); syncKey(i.k); onParam(i); });
+      (registry[i.k] = registry[i.k] || []).push({ item: i, el, out: code });
+    } else {
+      const el = document.createElement('button'); el.className = 'sw'; el.setAttribute('role', 'switch');
+      el.innerHTML = `<span>${i.l}</span><i></i>`;
+      el.onclick = () => { setVal(i, !getVal(i)); syncKey(i.k); Sound.tick(700); buzz('LIGHT'); onParam(i); };
+      (registry[i.k] = registry[i.k] || []).push({ item: i, el }); box.appendChild(el);
+    }
+    host.appendChild(box);
+  }
+  function setVal(i, v) { if (isTreeKey(i)) target()[i.k] = v; else P[i.k] = v; }
+
+  SCHEMA.forEach((sec, si) => {
+    const wrap = document.createElement('div'); wrap.className = 'group';
+    const h = document.createElement('h3'); h.dataset.i = String(si + 1).padStart(2, '0'); h.textContent = sec.g;
+    wrap.appendChild(h); sec.items.forEach(i => makeControl(i, wrap, false));
+    $('groups').appendChild(wrap);
+  });
+  Object.entries(PRESETS).forEach(([k, v]) => {
+    const b = document.createElement('button'); b.className = 'preset'; b.dataset.k = k;
+    b.innerHTML = `<span>${v.e}</span>${v.n}`;
+    b.onclick = () => {
+      P.preset = k; Object.assign(target(), v.p);
+      if (isMobile && v.p.leaves) target().leaves = Math.round(v.p.leaves * .45);
+      if (k === 'mix') { selected = null; forest.select(null); }
+      syncUI(); applyLive(); queue(selected ? 'one' : 'all'); Sound.tick(820); buzz('MEDIUM'); toast('Вид: ' + v.n);
+    };
+    $('presets').appendChild(b);
+  });
+  ['wind', 'sunEl', 'waterLevel', 'grassCount', 'treeCount', 'quality', 'wireframe', 'autoRotate'].forEach(k => makeControl(byKey[k], $('dock'), true));
+  const db = document.createElement('div'); db.className = 'dockbtns';
+  const b1 = document.createElement('button'); b1.className = 'dockbtn'; b1.textContent = '⚄ Мир'; b1.onclick = () => $('btnRandom').click();
+  const b2 = document.createElement('button'); b2.className = 'dockbtn'; b2.textContent = '◱ Статы'; b2.onclick = () => $('hudToggle').click();
+  const b3 = document.createElement('button'); b3.className = 'dockbtn exit'; b3.textContent = '✕ Выйти'; b3.onclick = () => setViewer(false);
+  db.append(b1, b2, b3); $('dock').appendChild(db);
+
+  const EXP = { wood: true, leaves: true, land: true, rocks: true, grass: false, water: true, leafCap: isMobile ? 6000 : 20000, grassCap: isMobile ? 8000 : 30000 };
+  [['wood', 'стволы'], ['leaves', 'листва'], ['land', 'земля'], ['rocks', 'камни'], ['grass', 'трава'], ['water', 'вода']].forEach(([k, l]) => {
+    const b = document.createElement('button'); b.className = 'exptog' + (EXP[k] ? ' on' : ''); b.textContent = l;
+    b.onclick = () => { EXP[k] = !EXP[k]; b.classList.toggle('on', EXP[k]); buzz('LIGHT'); updateExpInfo(); };
+    $('expToggles').appendChild(b);
+  });
+  function updateExpInfo() {
+    const parts = collectWorld({ forest, terrain: land, water }, EXP);
+    const s = partsStats(parts);
+    $('expInfo').textContent = `${s.meshes} мешей · ${fmt(s.verts)} вершин · ${fmt(s.tris)} треугольников`;
+    return parts;
+  }
+
+  /* ---------------- деревья ---------------- */
+  function treeParams(base, rng, variation) {
+    const p = {};
+    for (const k of TREE_KEYS) p[k] = base[k];
+    p.seed = 1 + ((rng() * 999999) | 0);
+    p.height = clamp(base.height * (1 + (rng() - .5) * variation * .8), 4, 30);
+    p.trunk = clamp(base.trunk * (1 + (rng() - .5) * variation * .6), .15, 1.6);
+    p.crown = Math.round(clamp(base.crown * (1 + (rng() - .5) * variation * .7), 300, 8000));
+    p.chaos = clamp(base.chaos + (rng() - .5) * variation * .5, 0, 1);
+    p.droop = clamp(base.droop + (rng() - .5) * variation * .3, -.8, .5);
+    p.leaves = Math.round(clamp(base.leaves * (1 + (rng() - .5) * variation * .6), 0, 180000));
+    const c = new THREE.Color(base.leafColor), hsl = { h: 0, s: 0, l: 0 };
+    c.getHSL(hsl, THREE.SRGBColorSpace);
+    c.setHSL((hsl.h + (rng() - .5) * .09 * variation + 1) % 1, clamp(hsl.s + (rng() - .5) * .2 * variation, .1, 1), clamp(hsl.l + (rng() - .5) * .14 * variation, .12, .85), THREE.SRGBColorSpace);
+    p.leafColor = '#' + c.getHexString(THREE.SRGBColorSpace);
+    if (variation > .55 && rng() < .35) {
+      const kinds = ['cluster', 'broad', 'needle', 'bloom'];
+      p.leafShape = kinds[(rng() * kinds.length) | 0];
+      p.shape = ['sphere', 'cone', 'umbrella'][(rng() * 3) | 0];
+    }
+    return p;
+  }
+  function placeTrees() {
+    const rng = mulberry32(P.seed * 31 + 7);
+    const want = Math.min(Math.round(P.treeCount), Q.treeCap);
+    while (forest.trees.length > want) forest.drop(forest.trees[forest.trees.length - 1]);
+    const spots = [];
+    const okSpot = (x, z, minD) => {
+      if (land.heightAt(x, z) < (P.water ? P.waterLevel + .4 : -1e9)) return false;
+      if (land.normalAt(x, z).y < .74) return false;
+      for (const s of spots) if (Math.hypot(s[0] - x, s[1] - z) < minD) return false;
+      return true;
+    };
+    for (let i = 0; i < forest.trees.length; i++) {
+      const t = forest.trees[i];
+      t.p = treeParams(P, rng, i === 0 ? 0 : P.variation);
+      if (i === 0) { t.x = 0; t.z = 0; }
+      spots.push([t.x, t.z]);
+    }
+    while (forest.trees.length < want) {
+      const i = forest.trees.length;
+      const p = treeParams(P, rng, P.variation);
+      let x = 0, z = 0, tries = 0;
+      const minD = Math.max(4, p.height * .55);
+      do {
+        const a = rng() * Math.PI * 2, r = Math.sqrt(rng()) * P.scatter;
+        x = Math.cos(a) * r; z = Math.sin(a) * r; tries++;
+      } while (!okSpot(x, z, minD) && tries < 120);
+      const t = forest.newTree(p, x, z);
+      spots.push([x, z]);
+      if (i === 0) { t.x = 0; t.z = 0; }
+    }
+    forest.trees.forEach(t => { t.baseY = land.heightAt(t.x, t.z); t.group.position.set(t.x, t.baseY, t.z); });
+  }
+
+  /* ---------------- очередь заданий ---------------- */
+  const dirty = { all: false, one: null, terrain: false, veg: false, bark: false };
+  let pendingAt = 0, job = null;
+  function queue(scope) {
+    if (scope === 'all') dirty.all = true;
+    else if (scope === 'one') dirty.one = selected;
+    else if (scope === 'terrain') { dirty.terrain = true; dirty.veg = true; dirty.all = true; }
+    else if (scope === 'veg') dirty.veg = true;
+    else if (scope === 'water') { dirty.veg = true; dirty.all = true; }
+    else if (scope === 'forest') dirty.all = true;
+    else if (scope === 'bark') dirty.bark = true;
+    pendingAt = performance.now(); $('growChip').classList.add('show');
+  }
+  function* combined() {
+    if (dirty.bark) {
+      const t = yield* barkJob(makeNoise3D(90210), P.barkRes);
+      forest.setBark(t); dirty.bark = false;
+    }
+    land.prepare(P);
+    if (dirty.terrain || dirty.veg) {
+      yield* land.build(P, Q, dirty.terrain);
+      water.update(P, land.heightTex, land.hMin, land.hMax);
+      dirty.terrain = dirty.veg = false;
+    }
+    if (dirty.all) {
+      placeTrees();
+      for (const t of forest.trees) yield* forest.build(t, Q, land.heightAt, P.waterLevel);
+      dirty.all = false; dirty.one = null;
+    } else if (dirty.one) {
+      yield* forest.build(dirty.one, Q, land.heightAt, P.waterLevel);
+      dirty.one = null;
+    }
+    forest.setSkeleton(P.skeleton);
+    if (selected) forest.select(selected);
+    syncUI();
+    return true;
+  }
+  function onParam(i) {
+    if (i.s === 'live') applyLive();
+    else if (i.s === 'quality') { Q = QUALITY[P.quality]; E.setQuality(Q); queue('all'); queue('terrain'); toast('Качество: ' + Q.n + (P.quality === 'prime' && isMobile ? ' — тяжело для телефона' : ''), P.quality === 'prime' && isMobile ? 'warn' : ''); }
+    else if (i.s === 'tree' || i.s === 'leaf') queue(selected ? 'one' : 'all');
+    else queue(i.s);
+  }
+  function applyLive() {
+    forest.setWire(P.wireframe); land.setWire(P.wireframe);
+    forest.setSkeleton(P.skeleton);
+    U.wind.value = P.wind; U.backlight.value = P.backlight; Sound.setWind(P.wind);
+    E.flies.visible = P.fireflies; grid.visible = P.grid; ref.visible = P.scaleRef;
+    const base = land.heightAt(0, 0);
+    grid.position.y = base + .02; ref.position.y = base;
+    E.setParticles(P.particles, base);
+    E.pollen.material.uniforms.uColor.value.set(P.preset === 'sakura' ? '#ffc0dc' : '#ffe9b8');
+    E.cam.tRadius = P.dist;
+    water.update(P, land.heightTex, land.hMin, land.hMax);
+    E.applySky(P, base, Math.max(P.scatter, P.grassRadius) * 1.15 + P.height);
+    $('btnWire').classList.toggle('on', P.wireframe);
+  }
+
+  /* ---------------- перетаскивание ---------------- */
+  const hitPoint = new THREE.Vector3();
+  function rayTerrain(o, d) {
+    let t = 0, step = 1.5;
+    for (let i = 0; i < 320; i++) {
+      const nt = t + step * (1 + t * .012);
+      const x = o.x + d.x * nt, y = o.y + d.y * nt, z = o.z + d.z * nt;
+      if (y - land.heightAt(x, z) < 0) {
+        let a = t, b = nt;
+        for (let k = 0; k < 20; k++) {
+          const m = (a + b) / 2;
+          const yy = o.y + d.y * m;
+          if (yy - land.heightAt(o.x + d.x * m, o.z + d.z * m) < 0) b = m; else a = m;
+        }
+        const tt = (a + b) / 2;
+        return hitPoint.set(o.x + d.x * tt, o.y + d.y * tt, o.z + d.z * tt);
+      }
+      t = nt; if (t > 1600) break;
+    }
+    return null;
+  }
+  let dragTree = null, dragMoved = false;
+  stage.addEventListener('pointerdown', e => {
+    if (e.target !== canvas) return;
+    Sound.resume();
+    const { o, d } = E.pointerRay(e.clientX, e.clientY);
+    const t = forest.pick(o, d);
+    if (t) {
+      e.stopPropagation(); e.preventDefault();
+      dragTree = t; dragMoved = false; selectTree(t);
+      canvas.classList.add('grabtree');
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+      buzz('MEDIUM'); Sound.tick(520);
+      $('hint').classList.add('gone');
+    }
+  }, true);
+  stage.addEventListener('pointermove', e => {
+    if (!dragTree) return;
+    e.stopPropagation();
+    const { o, d } = E.pointerRay(e.clientX, e.clientY);
+    const p = rayTerrain(o, d);
+    if (p) {
+      dragMoved = true;
+      const lim = P.tsize * .46;
+      const x = clamp(p.x, -lim, lim), z = clamp(p.z, -lim, lim);
+      forest.move(dragTree, x, z, land.heightAt(x, z));
+    }
+  }, true);
+  const endDrag = e => {
+    if (!dragTree) return;
+    e.stopPropagation();
+    const t = dragTree; dragTree = null;
+    canvas.classList.remove('grabtree');
+    if (dragMoved) { queue('one'); dirty.one = t; toast('Дерево #' + t.id + ' пересажено'); buzz('LIGHT'); }
+  };
+  stage.addEventListener('pointerup', endDrag, true);
+  stage.addEventListener('pointercancel', endDrag, true);
+  canvas.addEventListener('dblclick', e => {
+    const { o, d } = E.pointerRay(e.clientX, e.clientY);
+    if (forest.pick(o, d)) return;
+    const p = rayTerrain(o, d); if (!p) return;
+    plantAt(p.x, p.z);
+  });
+  function selectTree(t) { selected = t; forest.select(t); syncUI(); }
+  function plantAt(x, z) {
+    if (forest.trees.length >= Q.treeCap) { toast('Лимит деревьев для качества ' + Q.n, 'warn'); return; }
+    const rng = mulberry32((Math.random() * 1e6) | 0);
+    const t = forest.newTree(treeParams(P, rng, P.variation), x, z);
+    t.baseY = land.heightAt(x, z); t.group.position.set(x, t.baseY, z);
+    selectTree(t); dirty.one = t; pendingAt = performance.now(); $('growChip').classList.add('show');
+    P.treeCount = forest.trees.length; syncKey('treeCount'); syncUI();
+    toast('Посажено дерево #' + t.id); buzz('MEDIUM'); Sound.tick(880);
+  }
+  $('btnPlant').onclick = () => {
+    const a = Math.random() * 6.283, r = 6 + Math.random() * Math.max(8, P.scatter * .6);
+    plantAt(Math.cos(a) * r, Math.sin(a) * r);
+  };
+  $('selNone').onclick = () => { selectTree(null); syncUI(); };
+  $('selDel').onclick = () => {
+    if (!selected) return;
+    if (forest.trees.length <= 1) { toast('Последнее дерево удалить нельзя', 'warn'); return; }
+    forest.drop(selected); selectTree(null);
+    P.treeCount = forest.trees.length; syncKey('treeCount'); syncUI(); E.markShadows(); toast('Дерево удалено');
+  };
+  $('selDup').onclick = () => {
+    if (!selected || forest.trees.length >= Q.treeCap) { toast('Лимит деревьев', 'warn'); return; }
+    const a = Math.random() * 6.283, d = Math.max(4, selected.p.height * .6);
+    const x = selected.x + Math.cos(a) * d, z = selected.z + Math.sin(a) * d;
+    const t = forest.newTree(Object.assign({}, selected.p, { seed: 1 + ((Math.random() * 1e6) | 0) }), x, z);
+    t.baseY = land.heightAt(x, z); t.group.position.set(x, t.baseY, z);
+    selectTree(t); dirty.one = t; pendingAt = performance.now(); $('growChip').classList.add('show');
+    P.treeCount = forest.trees.length; syncKey('treeCount'); syncUI();
+  };
+  $('selAll').onclick = () => {
+    if (!selected) return;
+    for (const k of TREE_KEYS) P[k] = selected.p[k];
+    selectTree(null); syncUI(); queue('all'); toast('Параметры применены ко всему лесу');
+  };
+
+  /* ---------------- кнопки ---------------- */
+  let toastTimer = 0;
+  function toast(msg, kind) {
+    const t = $('toast'); t.textContent = msg; t.className = 'ov show' + (kind ? ' ' + kind : '');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+  }
+  function setViewer(on) {
+    document.body.classList.toggle('viewer', on);
+    $('btnViewer').textContent = on ? '⤡' : '⤢'; $('btnViewer').classList.toggle('on', on);
+    if (on) { $('hud').classList.add('collapsed'); $('hudToggle').setAttribute('aria-expanded', 'false'); }
+    buzz('MEDIUM'); Sound.tick(on ? 880 : 440);
+    requestAnimationFrame(() => E.resize()); setTimeout(() => E.resize(), 260);
+  }
+  $('btnViewer').onclick = () => setViewer(!document.body.classList.contains('viewer'));
+  $('hudToggle').onclick = () => { const c = $('hud').classList.toggle('collapsed'); $('hudToggle').setAttribute('aria-expanded', String(!c)); Sound.tick(600); };
+  $('btnCam').onclick = () => { E.resetCamera(); P.focusX = 0; P.focusZ = 0; toast('Камера сброшена'); };
+  $('btnWire').onclick = () => { P.wireframe = !P.wireframe; syncUI(); applyLive(); Sound.tick(600); };
+  $('btnDice2').onclick = () => $('btnRandom').click();
+  const reseed = d => { P.seed = Math.max(1, P.seed + d); selected = null; forest.select(null); syncUI(); queue('terrain'); Sound.tick(560); buzz('LIGHT'); };
+  $('seedMinus').onclick = () => reseed(-1);
+  $('seedPlus').onclick = () => reseed(1);
+  $('seedDice').onclick = () => { P.seed = 1 + ((Math.random() * 99999) | 0); selected = null; forest.select(null); syncUI(); queue('terrain'); buzz('MEDIUM'); };
+  $('btnRandom').onclick = () => {
+    P.seed = 1 + ((Math.random() * 99999) | 0);
+    P.relief = Math.round(clamp(P.relief * (.7 + Math.random() * .8), 0, 40) * 2) / 2;
+    P.tscale = Math.round(clamp(P.tscale * (.75 + Math.random() * .6), 20, 400) / 5) * 5;
+    P.riverMeander = Math.round(Math.random() * 100) / 100;
+    P.riverOffset = Math.round((Math.random() - .5) * 120);
+    P.waterLevel = Math.round(clamp(-P.relief * (.2 + Math.random() * .35), -20, 12) * 5) / 5;
+    selected = null; forest.select(null);
+    syncUI(); applyLive(); queue('terrain'); Sound.tick(880); buzz('MEDIUM'); toast('Новый мир · seed ' + P.seed);
+  };
+  $('btnReset').onclick = () => {
+    Object.assign(P, DEFAULTS); if (isMobile) trim();
+    Q = QUALITY[P.quality]; E.setQuality(Q);
+    selected = null; forest.select(null);
+    while (forest.trees.length) forest.drop(forest.trees[0]);
+    E.resetCamera(); syncUI(); applyLive(); queue('bark'); queue('terrain'); toast('Сброс完成'.replace('完成', ' выполнен'));
+  };
+  $('btnPng').onclick = async () => {
+    const g = U.grow.value; U.grow.value = 1; E.render(performance.now(), P);
+    let data; try { data = E.renderer.domElement.toDataURL('image/png'); } catch (e) { U.grow.value = g; toast('Экспорт кадра запрещён', 'warn'); return; }
+    U.grow.value = g;
+    const msg = await saveArtifact({ filename: `drevo-${P.seed}.png`, base64: data.split(',')[1], mime: 'image/png', title: 'Кадр мира' });
+    if (msg) { toast(msg); buzz('MEDIUM'); }
+  };
+  $('btnWorld').onclick = async () => {
+    const parts = updateExpInfo();
+    if (!parts.length) { toast('Нечего экспортировать', 'warn'); return; }
+    const s = partsStats(parts);
+    toast('Собираю ' + fmt(s.tris) + ' трис…');
+    await new Promise(r => setTimeout(r, 60));
+    try {
+      if ($('expFormat').value === 'obj') {
+        const text = toOBJ(parts, `seed ${P.seed} · ${fmt(s.tris)} tris`);
+        const msg = await saveArtifact({ filename: `drevo-world-${P.seed}.obj`, text, mime: 'text/plain', title: '3D-мир OBJ' });
+        if (msg) toast(msg);
+      } else {
+        const blob = await toGLB(parts, `DREVO seed ${P.seed}`, (p, name) => { $('growText').textContent = 'GLB: ' + name; $('growPct').textContent = Math.round(p * 100) + '%'; $('growChip').classList.add('show'); });
+        const b64 = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); });
+        const msg = await saveArtifact({ filename: `drevo-world-${P.seed}.glb`, base64: b64, mime: 'model/gltf-binary', title: '3D-мир GLB' });
+        $('growChip').classList.remove('show');
+        if (msg) toast(msg + ' · ' + (blob.size / 1048576).toFixed(1) + ' МБ');
+      }
+      buzz('MEDIUM');
+    } catch (e) { console.error(e); toast('Экспорт не удался: ' + e.message, 'err'); $('growChip').classList.remove('show'); }
+  };
+  const sb = $('soundBtn');
+  sb.onclick = () => {
+    Sound.resume(); Sound.setOn(!Sound.on);
+    sb.classList.toggle('on', Sound.on); sb.classList.toggle('off', !Sound.on);
+    sb.setAttribute('aria-pressed', String(Sound.on));
+    sb.querySelector('.txt').textContent = Sound.on ? 'ЗВУК' : 'ТИХО';
+    buzz('LIGHT'); if (Sound.on) Sound.tick(760);
+  };
+  addEventListener('pointerdown', () => Sound.resume(), { once: true });
+  addEventListener('keydown', e => {
+    if (/input|select|textarea/i.test(e.target.tagName)) return;
+    const k = e.key.toLowerCase();
+    if (k === 'escape') { if (document.body.classList.contains('viewer')) setViewer(false); else selectTree(null); }
+    else if (k === 'f') setViewer(!document.body.classList.contains('viewer'));
+    else if (k === 'h') $('hudToggle').click();
+    else if (k === 'r') $('btnRandom').click();
+    else if (k === 'w') $('btnWire').click();
+    else if (k === 'delete') $('selDel').click();
+    else if (k === ' ') { e.preventDefault(); P.autoRotate = !P.autoRotate; syncUI(); }
+    else if (k === 'arrowleft') E.cam.tTheta -= .12;
+    else if (k === 'arrowright') E.cam.tTheta += .12;
+    else if (k === 'arrowup') E.cam.tPhi = clamp(E.cam.tPhi - .08, .06, 1.53);
+    else if (k === 'arrowdown') E.cam.tPhi = clamp(E.cam.tPhi + .08, .06, 1.53);
+  });
+  E.hooks.interact = () => { Sound.resume(); $('hint').classList.add('gone'); };
+  E.hooks.zoom = v => { P.dist = Math.round(v); syncKey('dist'); };
+  if (!isMobile) $('hintText').textContent = 'тащи дерево мышью ·双击 — посадить · F — полный экран · H — статы'.replace('双击', 'двойной клик');
+
+  /* ---------------- цикл ---------------- */
+  let growT = 1, last = performance.now(), fpsAcc = 0, fpsN = 0, msAcc = 0, hudAt = 0, booted = false;
+  let rafId = 0, running = false, badge = 0;
+  const gustBars = [...$('gust').children];
+  function frame(now) {
+    if (!running) return;
+    rafId = requestAnimationFrame(frame);
+    const dt = Math.min(.05, (now - last) / 1000); last = now;
+    const pending = dirty.all || dirty.one || dirty.terrain || dirty.veg || dirty.bark;
+    if (!job && pending && now - pendingAt > 130) { job = combined(); U.grow.value = 0; growT = 0; E.key.castShadow = false; }
+    if (job) {
+      const t0 = performance.now(); let r;
+      try { do { r = job.next(); } while (!r.done && performance.now() - t0 < 6); }
+      catch (err) { console.error(err); job = null; dirty.all = dirty.one = dirty.terrain = dirty.veg = dirty.bark = false; toast('Ошибка генерации: ' + err.message, 'err'); }
+      if (job && r && !r.done && r.value) { $('growText').textContent = r.value.label || 'генерация'; $('growPct').textContent = Math.round((r.value.p || 0) * 100) + '%'; }
+      if (job && r && r.done) {
+        job = null; applyLive(); Sound.rustle(); E.markShadows(); updateExpInfo();
+        const tt = forest.totals();
+        if (tt.auto) toast('Шаг роста увеличен до ' + tt.seg.toFixed(2) + ' м — подними качество для большей детализации', 'warn');
+      }
+    }
+    if (growT < 1) {
+      growT = Math.min(1, growT + dt / 1.5);
+      U.grow.value = 1 - Math.pow(1 - growT, 3);
+      if (growT >= 1) { $('growChip').classList.remove('show'); E.key.castShadow = true; E.markShadows(); }
+    }
+    U.time.value = now * .001;
+    const base = land.heightAt(P.focusX || 0, P.focusZ || 0);
+    E.updateCamera(dt, now, P, base, reduceMotion);
+    if (forest.ring.visible) forest.ring.material.opacity = .55 + .35 * Math.sin(now * .004);
+    const t0 = performance.now(); E.render(now, P); msAcc += performance.now() - t0;
+    fpsAcc += dt; fpsN++;
+    const tt = forest.totals();
+    const world = tt.woodTris + tt.leafTris + land.stats.tris + land.stats.grass * 5 + land.stats.flowers * 4 + land.stats.rocks * 80;
+    badge += (world - badge) * Math.min(1, dt * 6);
+    $('triNum').textContent = fmt(badge);
+    if (now - hudAt > 240) {
+      const fps = fpsN / Math.max(.001, fpsAcc), el = $('mFps');
+      el.textContent = fps.toFixed(0);
+      el.style.color = fps > 50 ? 'var(--ok)' : fps > 28 ? 'var(--warn)' : 'var(--danger)';
+      $('mMs').textContent = (msAcc / fpsN).toFixed(1) + ' мс';
+      $('mTris').textContent = fmt(E.renderer.info.render.triangles);
+      $('mCalls').textContent = E.renderer.info.render.calls;
+      $('mTrees').textContent = forest.trees.length + ' / ' + Q.treeCap;
+      $('mNodes').textContent = fmt(tt.nodes) + ' / ' + fmt(tt.branches);
+      $('mSeg').textContent = tt.seg.toFixed(2) + ' м' + (tt.auto ? ' авто' : '');
+      $('mLeaves').textContent = fmt(tt.leaves);
+      $('mGrass').textContent = fmt(land.stats.grass) + ' / ' + fmt(land.stats.flowers);
+      $('mLand').textContent = fmt(land.stats.tris);
+      $('mWater').textContent = P.water ? land.stats.water + '% участка' : 'выключена';
+      $('mGen').textContent = (tt.ms + land.stats.ms).toFixed(0) + ' мс';
+      const gust = .55 + .45 * Math.sin(now * .00031);
+      $('mWind').textContent = P.wind.toFixed(2) + ' / ' + gust.toFixed(2);
+      $('hudMini').textContent = fps.toFixed(0) + ' fps · ' + fmt(world) + ' трис';
+      for (let i = 0; i < gustBars.length; i++) gustBars[i].style.height = (18 + Math.abs(Math.sin(now * .002 + i * .7)) * 82 * P.wind * gust).toFixed(0) + '%';
+      const p = clamp(world / 2000000, 0, 1), f = $('budgetFill');
+      f.style.width = (p * 100).toFixed(1) + '%';
+      f.style.background = p < .3 ? 'linear-gradient(90deg,var(--moss),var(--lime))' : p < .62 ? 'linear-gradient(90deg,var(--lime),var(--amber))' : 'linear-gradient(90deg,var(--amber),var(--danger))';
+      $('budgetPct').textContent = Math.round(p * 100) + '%';
+      hudAt = now; fpsAcc = 0; fpsN = 0; msAcc = 0;
+    }
+    if (!booted) { booted = true; $('boot').classList.add('hide'); setTimeout(() => { const b = $('boot'); if (b) b.style.display = 'none'; }, 700); }
+  }
+  function startLoop() { if (running) return; running = true; last = performance.now(); rafId = requestAnimationFrame(frame); }
+  function stopLoop() { running = false; if (rafId) cancelAnimationFrame(rafId); rafId = 0; }
+  let rp = false;
+  new ResizeObserver(() => { if (rp) return; rp = true; requestAnimationFrame(() => { rp = false; E.resize(); }); }).observe(stage);
+  addEventListener('orientationchange', () => setTimeout(() => E.resize(), 250));
+  E.renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); stopLoop(); toast('Контекст WebGL потерян — перезапусти приложение', 'err'); });
+  E.renderer.domElement.addEventListener('webglcontextrestored', () => { E.resize(); E.markShadows(); startLoop(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { stopLoop(); if (Sound.ctx) Sound.ctx.suspend(); }
+    else { startLoop(); if (Sound.ctx && Sound.on) Sound.ctx.resume(); }
+  });
+  initNative({
+    onBack: exit => { if (document.body.classList.contains('viewer')) setViewer(false); else if (selected) selectTree(null); else exit(); },
+    onActive: () => { startLoop(); if (Sound.ctx && Sound.on) Sound.ctx.resume(); },
+    onInactive: () => { stopLoop(); if (Sound.ctx) Sound.ctx.suspend(); }
+  });
+
+  land.prepare(P);
+  water.update(P, null, -1, 1);
+  syncUI(); E.resize(); applyLive();
+  queue('terrain');
+  startLoop();
+  setTimeout(() => $('hint').classList.add('gone'), 11000);
+}
