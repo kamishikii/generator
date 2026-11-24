@@ -4,8 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0a1411">
-<meta name="mobile-web-app-capable" content="yes">
-<title>ДРЕВО · лаборатория процедурных деревьев и ландшафта</title>
+<title>ДРЕВО · мир: деревья, ландшафт, вода</title>
 </head>
 <body>
 <div id="app">
@@ -17,36 +16,38 @@
         <path d="M16 15c-5 0-8-3.4-8-7 0-3 2.6-5.4 5.4-4.6C14 1.7 16.6 1 18.6 2.4c3-1 5.4 1.6 5.4 4.6 0 4-3.6 8-8 8z" fill="rgba(47,191,106,.28)" stroke="#9ef01a" stroke-width="1.6"/>
         <circle cx="25.5" cy="6.5" r="2.6" fill="#ffb020"/>
       </svg>
-      <div><h1>ДРЕВО</h1><small>tree &amp; terrain lab</small></div>
+      <div><h1>ДРЕВО</h1><small>world lab</small></div>
     </div>
     <div class="counter">
-      <div class="tris"><b id="triNum">0</b><span>треугольников</span></div>
-      <div class="budget">
-        <div class="bar"><div class="fill" id="budgetFill"></div></div>
-        <label><span>бюджет</span><span id="budgetPct">0%</span></label>
-      </div>
+      <div class="tris"><b id="triNum">0</b><span>треугольников мира</span></div>
+      <div class="budget"><div class="bar"><div class="fill" id="budgetFill"></div></div>
+        <label><span>бюджет</span><span id="budgetPct">0%</span></label></div>
       <button class="iconbtn on" id="soundBtn" aria-pressed="true"><i class="dot"></i><span class="txt">ЗВУК</span></button>
     </div>
   </header>
 
   <main class="stage" id="stage">
     <canvas id="gl"></canvas>
-
-    <div class="ov chip" id="presetChip">вид: <b id="presetName">Дуб</b> · seed <b id="seedName">1337</b></div>
+    <div class="ov chip" id="presetChip">вид: <b id="presetName">Дуб</b> · seed <b id="seedName">1337</b> · <b id="treeCount">1</b> дер.</div>
     <div class="ov chip" id="growChip"><i class="spin"></i><span id="growText">рост…</span><b id="growPct"></b></div>
+    <div class="ov chip" id="selChip"><span id="selText">дерево #1</span>
+      <button class="mini" id="selAll">ко всем</button>
+      <button class="mini" id="selDup">дубль</button>
+      <button class="mini danger" id="selDel">удалить</button>
+      <button class="mini" id="selNone">снять</button>
+    </div>
 
     <div class="stage-tools">
-      <button class="toolbtn hot" id="btnViewer" title="Полноэкранный просмотр" aria-label="Полноэкранный просмотр">⤢</button>
-      <button class="toolbtn" id="btnCam" title="Сбросить камеру" aria-label="Сбросить камеру">⟲</button>
-      <button class="toolbtn" id="btnWire" title="Каркас" aria-label="Каркас">◈</button>
-      <button class="toolbtn" id="btnDice2" title="Новое дерево" aria-label="Новое дерево">⚄</button>
+      <button class="toolbtn hot" id="btnViewer" title="Полный экран">⤢</button>
+      <button class="toolbtn" id="btnCam" title="Сброс камеры">⟲</button>
+      <button class="toolbtn" id="btnWire" title="Каркас">◈</button>
+      <button class="toolbtn" id="btnPlant" title="Посадить дерево">✚</button>
+      <button class="toolbtn" id="btnDice2" title="Новый мир">⚄</button>
     </div>
 
     <section class="ov panel" id="hud">
       <button class="hudhead" id="hudToggle" aria-expanded="true">
-        <span class="ttl">телеметрия</span>
-        <span class="mini" id="hudMini">—</span>
-        <i class="chev">▾</i>
+        <span class="ttl">телеметрия</span><span class="mini2" id="hudMini">—</span><i class="chev">▾</i>
       </button>
       <div class="hudbody">
         <div class="row"><span>FPS</span><b id="mFps">—</b></div>
@@ -54,11 +55,13 @@
         <div class="row"><span>трис сцены</span><b id="mTris">—</b></div>
         <div class="row opt"><span>draw calls</span><b id="mCalls">—</b></div>
         <div class="sep"></div>
+        <div class="row"><span>деревьев</span><b id="mTrees">—</b></div>
         <div class="row"><span>узлов / ветвей</span><b id="mNodes">—</b></div>
         <div class="row"><span>шаг роста</span><b id="mSeg">—</b></div>
         <div class="row"><span>листьев</span><b id="mLeaves">—</b></div>
         <div class="row"><span>травы / цветов</span><b id="mGrass">—</b></div>
         <div class="row opt"><span>трис ландшафта</span><b id="mLand">—</b></div>
+        <div class="row opt"><span>вода</span><b id="mWater">—</b></div>
         <div class="row opt"><span>генерация</span><b id="mGen">—</b></div>
         <div class="sep"></div>
         <div class="row"><span>ветер / порыв</span><b id="mWind">—</b></div>
@@ -66,43 +69,44 @@
       </div>
     </section>
 
-    <div class="ov" id="hint"><div class="chip"><span id="hintText">палец — орбита · два пальца — зум</span></div></div>
+    <div class="ov" id="hint"><div class="chip"><span id="hintText">тащи дерево пальцем · два пальца — зум</span></div></div>
     <div class="ov" id="toast"></div>
-
     <div id="dock"></div>
 
-    <div id="boot">
-      <div>
-        <svg width="112" height="112" viewBox="0 0 120 120" fill="none">
-          <path class="dash" d="M60 112V60M60 78l-20-16M60 70l20-16M60 60c-16 0-26-11-26-23 0-10 9-18 18-15 4-6 12-8 18-3 10-3 18 5 18 15 0 13-12 26-28 26z" stroke="#9ef01a" stroke-width="2.4" stroke-linecap="round"/>
-        </svg>
-        <p>инициализация сцены</p>
-      </div>
-    </div>
+    <div id="boot"><div>
+      <svg width="112" height="112" viewBox="0 0 120 120" fill="none">
+        <path class="dash" d="M60 112V60M60 78l-20-16M60 70l20-16M60 60c-16 0-26-11-26-23 0-10 9-18 18-15 4-6 12-8 18-3 10-3 18 5 18 15 0 13-12 26-28 26z" stroke="#9ef01a" stroke-width="2.4" stroke-linecap="round"/>
+      </svg><p>инициализация мира</p></div></div>
     <div id="fallback"><div><canvas id="fbCanvas" width="520" height="360"></canvas><p id="fbMsg"></p></div></div>
   </main>
 
   <aside class="rail" id="rail">
     <div class="seedbox">
-      <div class="lbl">сид генератора</div>
+      <div class="lbl">сид мира</div>
       <div class="stepper">
-        <button id="seedMinus" aria-label="Предыдущий сид">−</button>
-        <div class="val" id="seedVal">1337</div>
-        <button id="seedPlus" aria-label="Следующий сид">+</button>
-        <button id="seedDice" aria-label="Случайный сид">⚄</button>
+        <button id="seedMinus">−</button><div class="val" id="seedVal">1337</div>
+        <button id="seedPlus">+</button><button id="seedDice">⚄</button>
       </div>
     </div>
     <div class="presets" id="presets"></div>
     <div class="groups" id="groups"></div>
     <div class="actions">
-      <button class="btn primary wide" id="btnRandom">✦ Новое дерево и ландшафт</button>
+      <button class="btn primary wide" id="btnRandom">✦ Новый мир</button>
       <button class="btn" id="btnReset">↺ Сброс</button>
       <button class="btn" id="btnPng">▣ Кадр PNG</button>
-      <button class="btn" id="btnObj">↓ OBJ дерева</button>
-      <button class="btn" id="btnObjLand">↓ OBJ ландшафта</button>
+      <button class="btn wide" id="btnWorld">↓ Скачать 3D-мир</button>
+    </div>
+    <div class="exp">
+      <div class="lbl">что класть в экспорт</div>
+      <div class="exptoggles" id="expToggles"></div>
+      <div class="sel" style="margin-top:8px"><select id="expFormat">
+        <option value="glb">GLB (glTF 2.0, с текстурами)</option>
+        <option value="obj">OBJ (геометрия)</option>
+      </select></div>
+      <div class="hint" id="expInfo">—</div>
     </div>
     <div class="foot">
-      Скелет — <b>space colonization</b> с автоподбором шага под бюджет узлов. Кора: карта высот → альбедо + нормали, борозды вырезаны прямо в геометрии, у развилок утолщения-воротнички, у основания корневые лапы, мох вершинным цветом. Ландшафт — fBm с доменным варпом, трава инстансами по уклонам и пятнам влажности.
+      Мир генерируется целиком на устройстве: лес из отдельных деревьев (каждое со своим сидом), рельеф fBm с доменным варпом, вырезанное русло реки, озёра по уровню воды, трава куртинами, камни, цветы. Дерево можно <b>перетащить пальцем</b> — оно само сядет на рельеф.
     </div>
   </aside>
 </div>
