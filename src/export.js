@@ -1,12 +1,14 @@
 import * as THREE from 'three';
+const V = new THREE.Vector3(), N = new THREE.Vector3(), NM = new THREE.Matrix3();
 
-const V = new THREE.Vector3(), N = new THREE.Vector3(), M4 = new THREE.Matrix4(), NM = new THREE.Matrix3();
-
-function pushMesh(out, geo, matrix, mat, name, colorAttr) {
-  const pos = geo.attributes.position, nor = geo.attributes.normal, uv = geo.attributes.uv;
-  const col = colorAttr || geo.attributes.color;
-  const idx = geo.index;
-  if (!pos || !idx) return;
+function idxOf(geo) {
+  if (geo.index) return geo.index;
+  const n = geo.attributes.position.count;
+  return { count: n, getX: i => i };
+}
+export function pushMesh(out, geo, matrix, mat, name) {
+  const pos = geo.attributes.position; if (!pos) return;
+  const nor = geo.attributes.normal, uv = geo.attributes.uv, col = geo.attributes.color, idx = idxOf(geo);
   const n = pos.count;
   const P = new Float32Array(n * 3), Nr = nor ? new Float32Array(n * 3) : null;
   const U = uv ? new Float32Array(n * 2) : null, C = col ? new Float32Array(n * 3) : null;
@@ -22,39 +24,35 @@ function pushMesh(out, geo, matrix, mat, name, colorAttr) {
   for (let i = 0; i < idx.count; i++) I[i] = idx.getX(i);
   out.push({ name, P, N: Nr, U, C, I, mat });
 }
-function pushInstanced(out, im, parentMatrix, cap, mat, name, tint) {
+export function pushInstanced(out, im, parentMatrix, cap, mat, name) {
   if (!im || !im.count) return;
-  const geo = im.geometry, pos = geo.attributes.position, nor = geo.attributes.normal, uv = geo.attributes.uv, idx = geo.index;
+  const geo = im.geometry, pos = geo.attributes.position;
+  if (!pos) return;
+  const nor = geo.attributes.normal, uv = geo.attributes.uv, idx = idxOf(geo);
   const count = Math.min(im.count, cap), vn = pos.count;
   const P = new Float32Array(count * vn * 3), Nr = nor ? new Float32Array(count * vn * 3) : null;
-  const U = uv ? new Float32Array(count * vn * 2) : null;
-  const C = im.instanceColor ? new Float32Array(count * vn * 3) : null;
+  const U = uv ? new Float32Array(count * vn * 2) : null, C = im.instanceColor ? new Float32Array(count * vn * 3) : null;
   const I = new Uint32Array(count * idx.count);
   const local = new THREE.Matrix4(), world = new THREE.Matrix4();
   for (let k = 0; k < count; k++) {
-    im.getMatrixAt(k, local);
-    world.multiplyMatrices(parentMatrix, local);
+    im.getMatrixAt(k, local); world.multiplyMatrices(parentMatrix, local);
     NM.getNormalMatrix(world);
     for (let i = 0; i < vn; i++) {
-      const o = (k * vn + i);
+      const o = k * vn + i;
       V.fromBufferAttribute(pos, i).applyMatrix4(world);
       P[o * 3] = V.x; P[o * 3 + 1] = V.y; P[o * 3 + 2] = V.z;
       if (Nr) { N.fromBufferAttribute(nor, i).applyMatrix3(NM).normalize(); Nr[o * 3] = N.x; Nr[o * 3 + 1] = N.y; Nr[o * 3 + 2] = N.z; }
       if (U) { U[o * 2] = uv.getX(i); U[o * 2 + 1] = 1 - uv.getY(i); }
-      if (C) {
-        const c = im.instanceColor;
-        C[o * 3] = c.getX(k) * (tint ? tint[0] : 1); C[o * 3 + 1] = c.getY(k) * (tint ? tint[1] : 1); C[o * 3 + 2] = c.getZ(k) * (tint ? tint[2] : 1);
-      }
+      if (C) { const c = im.instanceColor; C[o * 3] = c.getX(k); C[o * 3 + 1] = c.getY(k); C[o * 3 + 2] = c.getZ(k); }
     }
     for (let i = 0; i < idx.count; i++) I[k * idx.count + i] = idx.getX(i) + k * vn;
   }
   out.push({ name, P, N: Nr, U, C, I, mat });
 }
-
 export function collectWorld({ forest, terrain, water }, opt) {
   const parts = [];
-  const barkMat = forest.barkMat;
-  const barkDesc = { key: 'bark', color: [1, 1, 1], map: barkMat.map, normalMap: barkMat.normalMap, rough: .95, doubleSided: false };
+  const bm = forest.barkMat;
+  const barkDesc = { key: 'bark', color: [1, 1, 1], map: bm.map, normalMap: bm.normalMap, rough: .95 };
   for (const t of forest.trees) {
     t.group.updateMatrixWorld(true);
     if (opt.wood && t.wood) pushMesh(parts, t.wood.geometry, t.group.matrixWorld, barkDesc, 'Tree_' + t.id + '_wood');
@@ -64,22 +62,17 @@ export function collectWorld({ forest, terrain, water }, opt) {
     }
     if (opt.leaves && t.litter) {
       const m = t.litter.material;
-      pushInstanced(parts, t.litter, t.group.matrixWorld, 2000, { key: 'litter', color: [1, 1, 1], map: m.map, alpha: .42, rough: .9, doubleSided: true }, 'Tree_' + t.id + '_litter');
+      pushInstanced(parts, t.litter, t.group.matrixWorld, 1500, { key: 'litter', color: [1, 1, 1], map: m.map, alpha: .42, rough: .9, doubleSided: true }, 'Tree_' + t.id + '_litter');
     }
   }
   terrain.group.updateMatrixWorld(true);
-  if (opt.land && terrain.land) pushMesh(parts, terrain.land.geometry, terrain.land.matrixWorld,
-    { key: 'land', color: [1, 1, 1], map: terrain.materials.landMat.map, normalMap: terrain.materials.landMat.normalMap, rough: 1, doubleSided: false }, 'Terrain');
-  if (opt.rocks && terrain.rocks) pushInstanced(parts, terrain.rocks, terrain.rocks.matrixWorld, 400,
-    { key: 'rock', color: [.66, .66, .63], map: terrain.materials.rockMat.map, normalMap: terrain.materials.rockMat.normalMap, rough: .95, doubleSided: false }, 'Rocks');
-  if (opt.grass && terrain.grass) pushInstanced(parts, terrain.grass, terrain.grass.matrixWorld, opt.grassCap,
-    { key: 'grass', color: [1, 1, 1], rough: .8, doubleSided: true }, 'Grass');
-  if (opt.grass && terrain.flowers) pushInstanced(parts, terrain.flowers, terrain.flowers.matrixWorld, 3000,
-    { key: 'flower', color: [1, 1, 1], map: terrain.materials.flowerMat.map, alpha: .4, rough: .7, doubleSided: true }, 'Flowers');
+  if (opt.land && terrain.land) pushMesh(parts, terrain.land.geometry, terrain.land.matrixWorld, { key: 'land', color: [1, 1, 1], map: terrain.materials.landMat.map, normalMap: terrain.materials.landMat.normalMap, rough: 1 }, 'Terrain');
+  if (opt.rocks && terrain.rocks) pushInstanced(parts, terrain.rocks, terrain.rocks.matrixWorld, 400, { key: 'rock', color: [.66, .66, .63], map: terrain.materials.rockMat.map, rough: .95 }, 'Rocks');
+  if (opt.grass && terrain.grass) pushInstanced(parts, terrain.grass, terrain.grass.matrixWorld, opt.grassCap, { key: 'grass', color: [1, 1, 1], rough: .8, doubleSided: true }, 'Grass');
+  if (opt.grass && terrain.flowers) pushInstanced(parts, terrain.flowers, terrain.flowers.matrixWorld, 2500, { key: 'flower', color: [1, 1, 1], map: terrain.materials.flowerMat.map, alpha: .4, rough: .7, doubleSided: true }, 'Flowers');
   if (opt.water && water.mesh.visible) {
     water.mesh.updateMatrixWorld(true);
-    pushMesh(parts, water.mesh.geometry, water.mesh.matrixWorld,
-      { key: 'water', color: [.12, .35, .45], rough: .12, doubleSided: true, opacity: .8 }, 'Water');
+    pushMesh(parts, water.mesh.geometry, water.mesh.matrixWorld, { key: 'water', color: [.12, .35, .45], rough: .12, doubleSided: true, opacity: .82 }, 'Water');
   }
   return parts;
 }
@@ -88,9 +81,8 @@ export function partsStats(parts) {
   for (const p of parts) { v += p.P.length / 3; t += p.I.length / 3; }
   return { verts: v, tris: t, meshes: parts.length };
 }
-
 export function toOBJ(parts, meta) {
-  const L = ['# DREVO world export', '# ' + meta];
+  const L = ['# DREVO export', '# ' + meta];
   let off = 0;
   for (const p of parts) {
     L.push('o ' + p.name);
@@ -106,14 +98,8 @@ export function toOBJ(parts, meta) {
   }
   return L.join('\n');
 }
-
 export async function toGLB(parts, meta, onProgress) {
-  const json = {
-    asset: { version: '2.0', generator: 'DREVO world lab', copyright: meta },
-    scene: 0, scenes: [{ nodes: [] }], nodes: [], meshes: [], materials: [],
-    accessors: [], bufferViews: [], buffers: [], images: [], textures: [],
-    samplers: [{ magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 }]
-  };
+  const json = { asset: { version: '2.0', generator: 'DREVO lab', copyright: meta }, scene: 0, scenes: [{ nodes: [] }], nodes: [], meshes: [], materials: [], accessors: [], bufferViews: [], buffers: [], images: [], textures: [], samplers: [{ magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 }] };
   const chunks = []; let byteLen = 0;
   const align = () => { const pad = (4 - (byteLen % 4)) % 4; if (pad) { chunks.push(new Uint8Array(pad)); byteLen += pad; } };
   function view(arr, target) {
@@ -123,38 +109,31 @@ export async function toGLB(parts, meta, onProgress) {
     chunks.push(bytes); byteLen += bytes.byteLength;
     return json.bufferViews.length - 1;
   }
-  function accessor(arr, type, comp, count, target, minmax) {
-    const bv = view(arr, target);
-    const a = { bufferView: bv, componentType: comp, count, type };
-    if (minmax) { a.min = minmax.min; a.max = minmax.max; }
+  function accessor(arr, type, comp, count, target, mm) {
+    const a = { bufferView: view(arr, target), componentType: comp, count, type };
+    if (mm) { a.min = mm.min; a.max = mm.max; }
     json.accessors.push(a); return json.accessors.length - 1;
   }
   const matCache = new Map(), texCache = new Map();
   async function texture(tex) {
-    if (!tex || !tex.image) return null;
+    if (!tex || !tex.image || !tex.image.toBlob) return null;
     if (texCache.has(tex.id)) return texCache.get(tex.id);
-    const cv = tex.image;
-    const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
+    const blob = await new Promise(res => tex.image.toBlob(res, 'image/png'));
     if (!blob) return null;
-    const buf = new Uint8Array(await blob.arrayBuffer());
-    const bv = view(buf);
+    const bv = view(new Uint8Array(await blob.arrayBuffer()));
     json.images.push({ bufferView: bv, mimeType: 'image/png' });
     json.textures.push({ sampler: 0, source: json.images.length - 1 });
-    const id = json.textures.length - 1;
-    texCache.set(tex.id, id); return id;
+    const id = json.textures.length - 1; texCache.set(tex.id, id); return id;
   }
   async function material(d) {
     if (matCache.has(d.key)) return matCache.get(d.key);
     const m = { name: d.key, doubleSided: !!d.doubleSided, pbrMetallicRoughness: { baseColorFactor: [d.color[0], d.color[1], d.color[2], d.opacity != null ? d.opacity : 1], metallicFactor: 0, roughnessFactor: d.rough != null ? d.rough : .9 } };
-    const t = await texture(d.map);
-    if (t != null) m.pbrMetallicRoughness.baseColorTexture = { index: t };
-    const nt = await texture(d.normalMap);
-    if (nt != null) m.normalTexture = { index: nt, scale: 1.2 };
+    const t = await texture(d.map); if (t != null) m.pbrMetallicRoughness.baseColorTexture = { index: t };
+    const nt = await texture(d.normalMap); if (nt != null) m.normalTexture = { index: nt, scale: 1.2 };
     if (d.alpha) { m.alphaMode = 'MASK'; m.alphaCutoff = d.alpha; }
     else if (d.opacity != null && d.opacity < 1) m.alphaMode = 'BLEND';
     json.materials.push(m);
-    const id = json.materials.length - 1;
-    matCache.set(d.key, id); return id;
+    const id = json.materials.length - 1; matCache.set(d.key, id); return id;
   }
   for (let pi = 0; pi < parts.length; pi++) {
     const p = parts[pi];
@@ -167,8 +146,7 @@ export async function toGLB(parts, meta, onProgress) {
     if (p.U) attrs.TEXCOORD_0 = accessor(p.U, 'VEC2', 5126, n, 34962);
     if (p.C) attrs.COLOR_0 = accessor(p.C, 'VEC3', 5126, n, 34962);
     const indices = accessor(p.I, 'SCALAR', 5125, p.I.length, 34963);
-    const matId = await material(p.mat);
-    json.meshes.push({ name: p.name, primitives: [{ attributes: attrs, indices, material: matId, mode: 4 }] });
+    json.meshes.push({ name: p.name, primitives: [{ attributes: attrs, indices, material: await material(p.mat), mode: 4 }] });
     json.nodes.push({ name: p.name, mesh: json.meshes.length - 1 });
     json.scenes[0].nodes.push(json.nodes.length - 1);
     await new Promise(r => setTimeout(r, 0));
@@ -177,15 +155,15 @@ export async function toGLB(parts, meta, onProgress) {
   json.buffers.push({ byteLength: byteLen });
   const bin = new Uint8Array(byteLen);
   let o = 0; for (const c of chunks) { bin.set(c, o); o += c.byteLength; }
-  let jsonStr = JSON.stringify(json);
-  while (jsonStr.length % 4) jsonStr += ' ';
-  const jsonBytes = new TextEncoder().encode(jsonStr);
-  const total = 12 + 8 + jsonBytes.length + 8 + bin.length;
+  let js = JSON.stringify(json);
+  while (js.length % 4) js += ' ';
+  const jb = new TextEncoder().encode(js);
+  const total = 12 + 8 + jb.length + 8 + bin.length;
   const out = new ArrayBuffer(total), dv = new DataView(out), u8 = new Uint8Array(out);
   dv.setUint32(0, 0x46546C67, true); dv.setUint32(4, 2, true); dv.setUint32(8, total, true);
-  dv.setUint32(12, jsonBytes.length, true); dv.setUint32(16, 0x4E4F534A, true);
-  u8.set(jsonBytes, 20);
-  const bo = 20 + jsonBytes.length;
+  dv.setUint32(12, jb.length, true); dv.setUint32(16, 0x4E4F534A, true);
+  u8.set(jb, 20);
+  const bo = 20 + jb.length;
   dv.setUint32(bo, bin.length, true); dv.setUint32(bo + 4, 0x004E4942, true);
   u8.set(bin, bo + 8);
   return new Blob([out], { type: 'model/gltf-binary' });
