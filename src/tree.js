@@ -338,4 +338,36 @@ export function createForest(U, barkTex, mobile) {
     t.stats.nodes = list.length; t.stats.branches = paths.length;
     t.stats.woodTris = geo.index.count / 3;
     t.stats.leaves = lm ? lm.count : 0; t.stats.leafTris = t.stats.leaves * 4;
-    t.stats.ms = performance.now() 
+    t.stats.ms = performance.now() - t0;
+    yield { p: 1, label: 'дерево #' + t.id + ' готово' };
+    return t.stats;
+  }
+  function makeNoise32(seed) { return makeNoise3D(seed); }
+
+  function pick(o, d) {
+    let best = null, bt = Infinity;
+    for (const t of trees) {
+      const spheres = [
+        [t.x, t.baseY + t.height * .62, t.z, Math.max(t.crownR * .95, t.height * .3)],
+        [t.x, t.baseY + t.height * .16, t.z, Math.max(t.p.trunk * 2.6, t.height * .13)]
+      ];
+      for (const [cx, cy, cz, r] of spheres) {
+        const ox = o.x - cx, oy = o.y - cy, oz = o.z - cz;
+        const b = ox * d.x + oy * d.y + oz * d.z, c = ox * ox + oy * oy + oz * oz - r * r;
+        const disc = b * b - c; if (disc < 0) continue;
+        const tt = -b - Math.sqrt(disc);
+        if (tt > 0 && tt < bt) { bt = tt; best = t; }
+      }
+    }
+    return best;
+  }
+  function totals() {
+    let wood = 0, leaf = 0, nodes = 0, branches = 0, leaves = 0, seg = 0, auto = false, ms = 0;
+    for (const t of trees) { wood += t.stats.woodTris; leaf += t.stats.leafTris; nodes += t.stats.nodes; branches += t.stats.branches; leaves += t.stats.leaves; seg = Math.max(seg, t.stats.seg); auto = auto || t.stats.auto; ms += t.stats.ms; }
+    return { woodTris: wood, leafTris: leaf, nodes, branches, leaves, seg, auto, ms };
+  }
+  return { group, trees, newTree, drop, build, select, move, pick, totals, leafTex, leafMats, barkMat, litterMat, ring,
+    setBark(t) { barkMat.map = t.map; barkMat.normalMap = t.normalMap; barkMat.roughnessMap = t.roughnessMap; barkMat.needsUpdate = true; },
+    setWire(v) { barkMat.wireframe = v; for (const k in leafMats) leafMats[k].wireframe = v; litterMat.wireframe = v; },
+    setSkeleton(v) { for (const t of trees) if (t.skel) t.skel.visible = v; } };
+}
