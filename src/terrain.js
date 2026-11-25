@@ -1,4 +1,3 @@
-
 import * as THREE from 'three';
 import { clamp, lerp, smoothstep, TAU, mulberry32, makeNoise3D, fbm, ridged } from './noise.js';
 import { windify } from './engine.js';
@@ -62,16 +61,19 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
     map: paintTex, normalMap: groundTex.normalMap, normalScale: new THREE.Vector2(1.0, 1.0),
     vertexColors: true, roughness: 1, metalness: 0, dithering: true
   });
-  /* фото-микродеталь земли: умножается поверх твоих биомов, когда ground_col.jpg загрузился */
+  /* фото-микродеталь земли поверх биомов; служебные символы собраны из кодов, чтобы не ломались при копировании */
+  const NL = String.fromCharCode(10);
+  const LT = String.fromCharCode(60), GT = String.fromCharCode(62);
+  const INC_COMMON = '#include ' + LT + 'common' + GT;
+  const INC_MAP = '#include ' + LT + 'map_fragment' + GT;
   const detailU = { value: groundTex.map }, mixU = { value: 0 };
   if (groundTex.ready) groundTex.ready.then(ok => { if (ok) mixU.value = 1; });
   landMat.onBeforeCompile = sh => {
     sh.uniforms.tDetail = detailU;
     sh.uniforms.uDetailMix = mixU;
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D tDetail;\nuniform float uDetailMix;')
-      .replace('#include <map_fragment>',
-        '#include <map_fragment>\nvec3 det = texture2D(tDetail, vMapUv * 90.0).rgb * 1.8;\ndiffuseColor.rgb *= mix(vec3(1.0), det, uDetailMix);');
+      .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDetail;' + NL + 'uniform float uDetailMix;')
+      .replace(INC_MAP, INC_MAP + NL + 'vec3 det = texture2D(tDetail, vMapUv * 90.0).rgb * 1.8;' + NL + 'diffuseColor.rgb *= mix(vec3(1.0), det, uDetailMix);');
   };
   const grassMat = windify(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .78, metalness: 0, side: THREE.DoubleSide }), U, { key: 'grass', base: 'instance', height: 'attr', flutter: .09 });
   const flowerMat = windify(new THREE.MeshStandardMaterial({ map: flowerTexture(mobile ? 64 : 96), alphaTest: .4, side: THREE.DoubleSide, roughness: .7 }), U, { key: 'flower', base: 'instance', height: 'attr', flutter: .05 });
