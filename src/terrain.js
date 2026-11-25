@@ -1,3 +1,4 @@
+
 import * as THREE from 'three';
 import { clamp, lerp, smoothstep, TAU, mulberry32, makeNoise3D, fbm, ridged } from './noise.js';
 import { windify } from './engine.js';
@@ -360,4 +361,160 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
     if (o.grid || !h || N !== Math.round(lerp(72, Q.landSeg, P.landDetail)) + 1 || size !== P.tsize) buildGrids(P, Q);
     if (o.heights !== false) {
       const f = makeField(P);
-      for (let j = 
+      for (let j = 0; j < N; j++) {
+        for (let i = 0; i < N; i++) h[gi(i, j)] = f(wx(i), wz(j));
+        if (j % 24 === 0) yield { p: .28 * (j / N), label: 'рельеф' };
+      }
+      wet.fill(DRY);
+      if (P.water) for (let k = 0; k < N * N; k++) if (h[k] < P.waterLevel) wet[k] = P.waterLevel;
+      refreshRows(0, N - 1, 0, N - 1);
+      refreshWater(0, N - 1, 0, N - 1);
+      for (let i = 0; i < 24; i++) relax(2, null);
+      refreshWater(0, N - 1, 0, N - 1);
+    }
+    if (o.paint !== false) yield* paintField(P);
+    if (o.veg !== false) yield* scatter(P, Q);
+    waterMat.uniforms.uWaves.value = P.waves;
+    waterMat.uniforms.uFlow.value.set(P.river ? 1 : .2, P.river ? .25 : .1);
+    waterMesh.visible = P.water;
+    stats.ms = performance.now() - t0;
+    yield { p: 1, label: 'ландшафт готов' };
+    return stats;
+  }
+  /* --- кисти --- */
+  function sculpt(x, z, tool, radius, strength, hardness, dt, target) {
+    const ci = (x / size + .5) * (N - 1), cj = (z / size + .5) * (N - 1);
+    const ri = Math.ceil(radius / cell) + 1;
+    const i0 = clamp(Math.floor(ci - ri), 0, N - 1), i1 = clamp(Math.ceil(ci + ri), 0, N - 1);
+    const j0 = clamp(Math.floor(cj - ri), 0, N - 1), j1 = clamp(Math.ceil(cj + ri), 0, N - 1);
+    if (i1 < i0 || j1 < j0) return null;
+    const rate = strength * 9 * dt, expo = 1 + (1 - hardness) * 3.2;
+    let touched = false, wtouch = false;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const dx = wx(i) - x, dz = wz(j) - z, d = Math.hypot(dx, dz);
+      if (d > radius) continue;
+      const f = Math.pow(1 - d / radius, expo), v = gi(i, j);
+      if (tool === 'raise') { h[v] = clamp(h[v] + rate * f, -160, 220); touched = true; }
+      else if (tool === 'lower') { h[v] = clamp(h[v] - rate * f, -160, 220); touched = true; }
+      else if (tool === 'smooth') {
+        const s = (h[gi(Math.max(0, i - 1), j)] + h[gi(Math.min(N - 1, i + 1), j)] + h[gi(i, Math.max(0, j - 1))] + h[gi(i, Math.min(N - 1, j + 1))]) * .25;
+        h[v] = lerp(h[v], s, clamp(strength * 7 * dt * f, 0, .9)); touched = true;
+      } else if (tool === 'plateau') { h[v] = lerp(h[v], target, clamp(strength * 6 * dt * f, 0, .9)); touched = true; }
+      else if (tool === 'water') {
+        const base = wet[v] > DRY ? wet[v] : h[v];
+        wet[v] = Math.min(base + strength * 5 * dt * f, h[v] + 26); wtouch = true;
+      } else if (tool === 'dry') { if (wet[v] > DRY) { wet[v] = DRY; wtouch = true; } }
+    }
+    const box = { i0, i1, j0, j1 };
+    if (touched) { refreshRows(i0, i1, j0, j1); waterBox = boxUnion(waterBox, box); waterBudget = 260; }
+    if (wtouch || touched) { waterBox = boxUnion(waterBox, box); waterBudget = 260; }
+    return box;
+  }
+  function relax(iters, box) {
+    const b = box || { i0: 1, i1: N - 2, j0: 1, j1: N - 2 };
+    const i0 = Math.max(1, b.i0 - 2), i1 = Math.min(N - 2, b.i1 + 2), j0 = Math.max(1, b.j0 - 2), j1 = Math.min(N - 2, b.j1 + 2);
+    let change = 0;
+    for (let it = 0; it < iters; it++) {
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const v = gi(i, j);
+        if (wet[v] <= DRY) continue;
+        let s = wet[v], sum = s, cnt = 1;
+        const nb = [v - 1, v + 1, v - N, v + N];
+        for (const q of nb) {
+          if (wet[q] > DRY) { sum += wet[q]; cnt++; }
+          else if (s > h[q] + .02) { wet[q] = h[q] + (s - h[q]) * .45; change += .01; }
+        }
+        let t = lerp(s, sum / cnt, .42);
+        t = Math.max(t, h[v]);
+        if (t - h[v] < .006) { wet[v] = DRY; change += .02; }
+        else { change += Math.abs(t - s); wet[v] = t; }
+      }
+    }
+    return change;
+  }
+  function tickWater() {
+    if (waterBudget <= 0 || !waterBox) return false;
+    const ch = relax(2, waterBox);
+    refreshWater(waterBox.i0, waterBox.i1, waterBox.j0, waterBox.j1);
+    waterBox = { i0: Math.max(0, waterBox.i0 - 1), i1: Math.min(N - 1, waterBox.i1 + 1), j0: Math.max(0, waterBox.j0 - 1), j1: Math.min(N - 1, waterBox.j1 + 1) };
+    waterBudget -= ch < .02 ? 40 : 1;
+    if (waterBudget <= 0) waterBox = null;
+    return true;
+  }
+  function paint(x, z, radius, strength, hardness, hex, px, pz) {
+    const S = paintSize, sc = S / size;
+    const cx = (x / size + .5) * S, cy = (z / size + .5) * S, r = Math.max(2, radius * sc);
+    const steps = px == null ? 1 : Math.max(1, Math.ceil(Math.hypot(cx - px, cy - pz) / (r * .35)));
+    paintCtx.save();
+    for (let s = 0; s < steps; s++) {
+      const t = steps === 1 ? 1 : s / (steps - 1);
+      const gx = px == null ? cx : lerp(px, cx, t), gy = pz == null ? cy : lerp(pz, cy, t);
+      const g = paintCtx.createRadialGradient(gx, gy, 0, gx, gy, r);
+      const c = new THREE.Color(hex);
+      const rgb = `${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)}`;
+      const a = clamp(strength * .5, .02, .9);
+      g.addColorStop(0, `rgba(${rgb},${a})`);
+      g.addColorStop(clamp(hardness, .05, .95), `rgba(${rgb},${a * .55})`);
+      g.addColorStop(1, `rgba(${rgb},0)`);
+      paintCtx.fillStyle = g;
+      paintCtx.beginPath(); paintCtx.arc(gx, gy, r, 0, TAU); paintCtx.fill();
+    }
+    paintCtx.restore();
+    paintDirty = true;
+    return { cx, cy };
+  }
+  function flushPaint() { if (paintDirty) { paintTex.needsUpdate = true; paintDirty = false; } }
+  function refreshVeg(box) {
+    if (!box) return;
+    const x0 = wx(Math.max(0, box.i0 - 1)), x1 = wx(Math.min(N - 1, box.i1 + 1));
+    const z0 = wz(Math.max(0, box.j0 - 1)), z1 = wz(Math.min(N - 1, box.j1 + 1));
+    const m = new THREE.Matrix4();
+    for (const im of [grass, flowers]) {
+      if (!im) continue;
+      const base = im.geometry.attributes.aBase;
+      let ch = false;
+      for (let k = 0; k < im.count; k++) {
+        im.getMatrixAt(k, m);
+        const x = m.elements[12], z = m.elements[14];
+        if (x < x0 || x > x1 || z < z0 || z > z1) continue;
+        const y = heightAt(x, z);
+        const i = clamp(Math.round((x / size + .5) * (N - 1)), 0, N - 1), j = clamp(Math.round((z / size + .5) * (N - 1)), 0, N - 1);
+        const under = wet[gi(i, j)] > DRY && wet[gi(i, j)] > y + .05;
+        if (under) { const s = 0; m.elements[0] = s; m.elements[5] = s; m.elements[10] = s; }
+        else if (m.elements[5] === 0) { im.getMatrixAt(k, m); }
+        m.elements[13] = y - .02;
+        base.array[k] = y;
+        im.setMatrixAt(k, m); ch = true;
+      }
+      if (ch) { im.instanceMatrix.needsUpdate = true; base.needsUpdate = true; }
+    }
+  }
+  function flood(level) {
+    for (let k = 0; k < N * N; k++) if (h[k] < level) wet[k] = Math.max(wet[k] > DRY ? wet[k] : DRY, level);
+    waterBox = { i0: 0, i1: N - 1, j0: 0, j1: N - 1 }; waterBudget = 200;
+    refreshWater(0, N - 1, 0, N - 1);
+  }
+  function drain() { wet.fill(DRY); waterBox = null; waterBudget = 0; refreshWater(0, N - 1, 0, N - 1); }
+  function snapshot(withPaint) {
+    return { h: h.slice(), wet: wet.slice(), paint: withPaint ? paintCtx.getImageData(0, 0, paintSize, paintSize) : null, N, size };
+  }
+  function restore(s) {
+    if (!s || s.N !== N || s.size !== size) return false;
+    h.set(s.h); wet.set(s.wet);
+    if (s.paint) { paintCtx.putImageData(s.paint, 0, 0); paintTex.needsUpdate = true; }
+    refreshRows(0, N - 1, 0, N - 1); refreshWater(0, N - 1, 0, N - 1);
+    refreshVeg({ i0: 0, i1: N - 1, j0: 0, j1: N - 1 });
+    return true;
+  }
+  return {
+    group, stats, build, heightAt, normalAt, sculpt, paint, flushPaint, tickWater, refreshVeg, flood, drain,
+    snapshot, restore, relax, refreshWater, refreshRows,
+    materials: { landMat, grassMat, rockMat, flowerMat, waterMat },
+    get land() { return land; }, get waterMesh() { return waterMesh; },
+    get grass() { return grass; }, get rocks() { return rocks; }, get flowers() { return flowers; },
+    get N() { return N; }, get size() { return size; }, get paintTex() { return paintTex; },
+    setWire(v) { landMat.wireframe = v; grassMat.wireframe = v; rockMat.wireframe = v; flowerMat.wireframe = v; },
+    setWater(v) { if (waterMesh) waterMesh.visible = v; },
+    setWaves(v) { waterMat.uniforms.uWaves.value = v; }
+  };
+}
