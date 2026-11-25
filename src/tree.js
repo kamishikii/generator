@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clamp, lerp, TAU, mulberry32, makeNoise3D, fbm, ridged } from './noise.js';
 import { windify } from './engine.js';
-import { leafTexture } from './textures.js';
+import { leafTexture, photoLeaf } from './textures.js';
 
 class Hash {
   constructor(c) { this.inv = 1 / c; this.m = new Map(); }
@@ -35,7 +35,7 @@ export function createForest(U, barkTex, mobile) {
   const kinds = ['cluster', 'broad', 'needle', 'bloom'];
   const leafTex = {}, leafMats = {};
   for (const k of kinds) {
-    leafTex[k] = leafTexture(k, mobile ? 160 : 256);
+      leafTex[k] = (k === 'cluster' || k === 'broad') ? photoLeaf() : leafTexture(k, mobile ? 160 : 256);
     leafMats[k] = windify(new THREE.MeshStandardMaterial({ map: leafTex[k], alphaTest: .42, side: THREE.DoubleSide, roughness: .66, metalness: 0 }),
       U, { key: 'leaf' + k, base: 'object', height: 'ref', ref: 12, flutter: .05, backlight: true });
   }
