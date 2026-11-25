@@ -8,6 +8,17 @@ export function toTex(c, srgb = true, repeat = true) {
   t.wrapS = t.wrapT = repeat ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
   t.anisotropy = 4; t.needsUpdate = true; return t;
 }
+/* --- ФОТО-СКАНЫ: если файл лежит в public/tex, текстура тихо заменяется на фото --- */
+const photoLoader = new THREE.TextureLoader();
+function photoUpgrade(t, file) {
+  return new Promise(resolve => {
+    photoLoader.load(import.meta.env.BASE_URL + 'tex/' + file, ok => {
+      t.image = ok.image;
+      t.needsUpdate = true;
+      resolve(true);
+    }, undefined, () => resolve(false));
+  });
+}
 function normalCanvas(H, w, h, s) {
   const c = canvas2d(w, h), x = c.getContext('2d'), o = x.createImageData(w, h), d = o.data;
   const at = (i, j) => H[((j + h) % h) * w + ((i + w) % w)];
@@ -56,7 +67,14 @@ export function* barkJob(noise, w) {
   yield { p: .95, label: 'нормали коры' };
   return { map: toTex(al), normalMap: toTex(normalCanvas(H, w, h, 5.5), false), roughnessMap: toTex(ro, false) };
 }
-export function barkTextures(n, w) { const g = barkJob(n, w); let r = g.next(); while (!r.done) r = g.next(); return r.value; }
+export function barkTextures(n, w) {
+  const g = barkJob(n, w); let r = g.next(); while (!r.done) r = g.next();
+  const set = r.value;
+  photoUpgrade(set.map, 'bark_col.jpg');
+  photoUpgrade(set.normalMap, 'bark_nor.jpg');
+  photoUpgrade(set.roughnessMap, 'bark_rough.jpg');
+  return set;
+}
 
 function leafPath(x, kind, cx, cy, s, rot) {
   x.save(); x.translate(cx, cy); x.rotate(rot); x.scale(s, s);
@@ -87,7 +105,9 @@ export function leafTexture(kind, size) {
     for (const [px, py, s, ro] of [[.5, .22, .40, -.1], [.26, .42, .36, -.7], [.74, .42, .36, .7], [.34, .70, .34, -.4], [.68, .72, .34, .5], [.5, .52, .38, .15]])
       leafPath(x, 'broad', px * size, py * size, s * S * (.9 + r() * .2), ro);
   } else leafPath(x, kind, 64 * S, 64 * S, S, 0);
-  return toTex(c, true, false);
+  const t = toTex(c, true, false);
+  if (kind === 'cluster' || kind === 'broad') photoUpgrade(t, 'leaf_cluster.png');
+  return t;
 }
 export function groundTextures(noise, size) {
   const H = new Float32Array(size * size);
@@ -104,7 +124,12 @@ export function groundTextures(noise, size) {
     d[k] = clamp(s * (1 + (r() - .5) * .08), 0, 1) * 255; d[k + 1] = clamp(s * 1.03, 0, 1) * 255; d[k + 2] = clamp(s * .93, 0, 1) * 255; d[k + 3] = 255;
   }
   x.putImageData(im, 0, 0);
-  return { map: toTex(c), normalMap: toTex(normalCanvas(H, size, size, 2.6), false) };
+  const set = { map: toTex(c), normalMap: toTex(normalCanvas(H, size, size, 2.6), false) };
+  set.ready = Promise.all([
+    photoUpgrade(set.map, 'ground_col.jpg'),
+    photoUpgrade(set.normalMap, 'ground_nor.jpg')
+  ]).then(rr => rr[0]);
+  return set;
 }
 export function rockTextures(noise, size) {
   const H = new Float32Array(size * size);
@@ -216,25 +241,4 @@ export function eyeTexture(size, irisHex) {
   x.fillStyle = '#050404'; x.beginPath(); x.arc(R, R, ir * .38, 0, 6.283); x.fill();
   x.fillStyle = 'rgba(255,255,255,.5)'; x.beginPath(); x.ellipse(R - ir * .3, R - ir * .34, ir * .17, ir * .12, -.6, 0, 6.283); x.fill();
   return toTex(c, true, false);
-}
-const loader = new THREE.TextureLoader();
-function photoTex(file, srgb) {
-  const t = loader.load(import.meta.env.BASE_URL + 'tex/' + file);
-  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
-  return t;
-}
-export function photoBark() {
-  return { map: photoTex('bark_col.jpg', true),
-           normalMap: photoTex('bark_nor.jpg', false),
-           roughnessMap: photoTex('bark_rough.jpg', false) };
-}
-export function photoGround() {
-  return { map: photoTex('ground_col.jpg', true), normalMap: photoTex('ground_nor.jpg', false) };
-}
-export function photoLeaf() {
-  const t = photoTex('leaf_cluster.png', true);
-  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
-  return t;
 }
