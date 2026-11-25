@@ -152,8 +152,8 @@ function boot() {
   E = createEngine(canvas, stage, U, { quality: Q, mobile: isMobile, grain: reduceMotion ? .012 : .03 });
   const tn = makeNoise3D(90210);
   HT = { skin: skinTextures(tn, isMobile ? 256 : 512), fabric: fabricTextures(tn, 256), hair: hairTextures(tn, 256) };
-  forest = createForest(U, barkTextures(tn, P.barkRes), isMobile);
-  land = createTerrainSystem(U, groundTextures(tn, isMobile ? 192 : 256), rockTextures(tn, 128), isMobile);
+    forest = createForest(U, photoBark(), isMobile);
+  land = createTerrainSystem(U, photoGround(), rockTextures(tn, 128), isMobile);
   human = createHuman(HT); building = createBuilding();
 
   const worldRoot = new THREE.Group(); E.scene.add(worldRoot);
