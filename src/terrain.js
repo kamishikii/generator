@@ -61,6 +61,15 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
     map: paintTex, normalMap: groundTex.normalMap, normalScale: new THREE.Vector2(1.0, 1.0),
     vertexColors: true, roughness: 1, metalness: 0, dithering: true
   });
+
+  landMat.onBeforeCompile = sh => {
+    sh.uniforms.tDetail = { value: groundTex.map };
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tDetail;')
+      .replace('#include <map_fragment>',
+        '#include <map_fragment>\ndiffuseColor.rgb *= texture2D(tDetail, vMapUv * 90.0).rgb * 1.8;');
+  };
+
   const grassMat = windify(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .78, metalness: 0, side: THREE.DoubleSide }), U, { key: 'grass', base: 'instance', height: 'attr', flutter: .09 });
   const flowerMat = windify(new THREE.MeshStandardMaterial({ map: flowerTexture(mobile ? 64 : 96), alphaTest: .4, side: THREE.DoubleSide, roughness: .7 }), U, { key: 'flower', base: 'instance', height: 'attr', flutter: .05 });
   const rockMat = new THREE.MeshStandardMaterial({ map: rockTex.map, normalMap: rockTex.normalMap, roughness: .95, color: 0xa8a8a0 });
