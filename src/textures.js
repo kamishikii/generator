@@ -217,3 +217,24 @@ export function eyeTexture(size, irisHex) {
   x.fillStyle = 'rgba(255,255,255,.5)'; x.beginPath(); x.ellipse(R - ir * .3, R - ir * .34, ir * .17, ir * .12, -.6, 0, 6.283); x.fill();
   return toTex(c, true, false);
 }
+const loader = new THREE.TextureLoader();
+function photoTex(file, srgb) {
+  const t = loader.load(import.meta.env.BASE_URL + 'tex/' + file);
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  return t;
+}
+export function photoBark() {
+  return { map: photoTex('bark_col.jpg', true),
+           normalMap: photoTex('bark_nor.jpg', false),
+           roughnessMap: photoTex('bark_rough.jpg', false) };
+}
+export function photoGround() {
+  return { map: photoTex('ground_col.jpg', true), normalMap: photoTex('ground_nor.jpg', false) };
+}
+export function photoLeaf() {
+  const t = photoTex('leaf_cluster.png', true);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
