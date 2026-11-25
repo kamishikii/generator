@@ -1,7 +1,7 @@
 import './style.css';
 import * as THREE from 'three';
 import { clamp, lerp, mulberry32, makeNoise3D, TAU } from './noise.js';
-import { barkTextures, barkJob, groundTextures, rockTextures, skinTextures, fabricTextures, hairTextures } from './textures.js';
+import { barkTextures, barkJob, groundTextures, rockTextures, skinTextures, fabricTextures, hairTextures, photoBark, photoGround } from './textures.js';
 import { createEngine } from './engine.js';
 import { createForest, TREE_KEYS } from './tree.js';
 import { createTerrainSystem, PAINTS } from './terrain.js';
