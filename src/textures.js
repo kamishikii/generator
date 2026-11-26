@@ -242,3 +242,7 @@ export function eyeTexture(size, irisHex) {
   x.fillStyle = 'rgba(255,255,255,.5)'; x.beginPath(); x.ellipse(R - ir * .3, R - ir * .34, ir * .17, ir * .12, -.6, 0, 6.283); x.fill();
   return toTex(c, true, false);
 }
+import { makeNoise3D } from './noise.js';
+export function photoBark() { return barkTextures(makeNoise3D(90210), 256); }
+export function photoGround() { return groundTextures(makeNoise3D(90210), 256); }
+export function photoLeaf() { return leafTexture('cluster', 256); }
