@@ -76,7 +76,7 @@ const PRESETS = {
   mix: { n: 'Микс-лес', e: '🌲', p: { treeCount: 8, scatter: 60, variation: .8 } }
 };
 const QUALITY = {
-  draft: { n: 'Черновик', radial: 5, maxNodes: 1800, pr: 1.25, shadow: 1024, msaa: 0, leafCap: 16000, blur: 1, landSeg: 112, grassCap: 14000, rockDetail: 1, treeCap: 6 },
+  draft: { n: 'Черновик', radial: 5, maxNodes: 1800, pr: 1.5, shadow: 1024, msaa: 4, leafCap: 16000, blur: 1, landSeg: 112, grassCap: 14000, rockDetail: 1, treeCap: 6 },
   game: { n: 'Игра', radial: 8, maxNodes: 3600, pr: 1.5, shadow: 2048, msaa: 4, leafCap: 40000, blur: 2, landSeg: 160, grassCap: 40000, rockDetail: 1, treeCap: 12 },
   cine: { n: 'Кино', radial: 12, maxNodes: 6500, pr: 1.75, shadow: 2048, msaa: 4, leafCap: 70000, blur: 2, landSeg: 224, grassCap: 90000, rockDetail: 2, treeCap: 20 },
   ultra: { n: 'Ультра', radial: 16, maxNodes: 11000, pr: 2, shadow: 4096, msaa: 4, leafCap: 110000, blur: 3, landSeg: 288, grassCap: 150000, rockDetail: 2, treeCap: 32 },
