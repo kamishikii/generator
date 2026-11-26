@@ -13,10 +13,10 @@ export const PAINTS = [
 ];
 
 function bladeGeometry() {
-  const rows = [0, .38, .72, 1], w = .062, pos = [], col = [], idx = [];
+  const rows = [0, .38, .72, 1], w = .085, pos = [], col = [], idx = [];
   for (let i = 0; i < rows.length; i++) {
     const t = rows[i], hw = w * (1 - t * .9), z = .30 * t * t, sh = .48 + t * .85;
-    if (i === rows.length - 1) { pos.push(0, t, z); col.push(sh, sh * 1.06, sh * .92); }
+    if (i === rows.length - 1) { pos.push(0, t, z); col.push(sh * 1.18, sh * 1.08, sh * .72); }
     else { pos.push(-hw, t, z, hw, t, z); col.push(sh * .92, sh, sh * .82, sh * .92, sh, sh * .82); }
   }
   for (let i = 0; i < rows.length - 2; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
@@ -61,7 +61,6 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
     map: paintTex, normalMap: groundTex.normalMap, normalScale: new THREE.Vector2(1.0, 1.0),
     vertexColors: true, roughness: 1, metalness: 0, dithering: true
   });
-  /* фото-микродеталь земли поверх биомов; служебные символы собраны из кодов, чтобы не ломались при копировании */
   const NL = String.fromCharCode(10);
   const LT = String.fromCharCode(60), GT = String.fromCharCode(62);
   const INC_COMMON = '#include ' + LT + 'common' + GT;
@@ -73,16 +72,17 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
     sh.uniforms.uDetailMix = mixU;
     sh.fragmentShader = sh.fragmentShader
       .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDetail;' + NL + 'uniform float uDetailMix;')
-      .replace(INC_MAP, INC_MAP + NL + 'vec3 det = texture2D(tDetail, vMapUv * 90.0).rgb * 1.8;' + NL + 'diffuseColor.rgb *= mix(vec3(1.0), det, uDetailMix);');
+      .replace(INC_MAP, INC_MAP + NL + 'vec3 det = texture2D(tDetail, vMapUv * 55.0).rgb * 2.3;' + NL + 'diffuseColor.rgb *= mix(vec3(1.0), det, uDetailMix);');
   };
   const grassMat = windify(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .78, metalness: 0, side: THREE.DoubleSide }), U, { key: 'grass', base: 'instance', height: 'attr', flutter: .09 });
   const flowerMat = windify(new THREE.MeshStandardMaterial({ map: flowerTexture(mobile ? 64 : 96), alphaTest: .4, side: THREE.DoubleSide, roughness: .7 }), U, { key: 'flower', base: 'instance', height: 'attr', flutter: .05 });
   const rockMat = new THREE.MeshStandardMaterial({ map: rockTex.map, normalMap: rockTex.normalMap, roughness: .95, color: 0xa8a8a0 });
+  const twigMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .95, metalness: 0 });
   const waterMat = createWaterMaterial(U);
 
   let N = 0, size = 200, cell = 1;
   let h = null, wet = null, land = null, waterMesh = null;
-  let grass = null, rocks = null, flowers = null;
+  let grass = null, rocks = null, flowers = null, twigs = null;
   let noise = makeNoise3D(1);
   let paintDirty = false, waterBox = null, waterBudget = 0;
   const stats = { tris: 0, grass: 0, flowers: 0, rocks: 0, ms: 0, water: 0, wet: 0 };
@@ -226,6 +226,7 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
         const y = heightAt(x, z), ny = normalAt(x, z).y;
         const moist = fbm(noise, x * .035, 3, z * .035, 3) * .5 + .5;
         const dry = fbm(noise, x * .12, 9, z * .12, 2) * .5 + .5;
+        const patch = fbm(noise, x * .06, 31, z * .06, 3) * .5 + .5;
         const rock = smoothstep(.86, .56, ny), soil = smoothstep(.96, .80, ny) * (1 - rock) * .6;
         c.setHSL(lerp(.21, .30, moist), lerp(.34, .56, moist), lerp(.24, .40, moist * .7 + dry * .3), THREE.SRGBColorSpace);
         let r = c.r, g = c.g, b = c.b;
@@ -233,6 +234,8 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
         r = lerp(r, sc.r, soil); g = lerp(g, sc.g, soil); b = lerp(b, sc.b, soil);
         const rc = new THREE.Color().setHSL(.08, .05, .30 + dry * .12, THREE.SRGBColorSpace);
         r = lerp(r, rc.r, rock); g = lerp(g, rc.g, rock); b = lerp(b, rc.b, rock);
+        const bare = smoothstep(.5, .3, patch) * .55;
+        r = lerp(r, .32, bare); g = lerp(g, .26, bare); b = lerp(b, .18, bare);
         if (P.water) {
           const sh = smoothstep(P.waterLevel + 1.1, P.waterLevel - .2, y);
           const wc = new THREE.Color().setHSL(.11, .26, .40, THREE.SRGBColorSpace);
@@ -258,7 +261,7 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
       const bg = bladeGeometry(), gm = new THREE.InstancedMesh(bg, grassMat, want);
       const gc = new Float32Array(want * 3), gb = new Float32Array(want), gh = new Float32Array(want), ga = new Float32Array(want);
       const d = new THREE.Object3D(), c = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
-      const R = Math.max(3, P.grassRadius), per = 6;
+      const R = Math.max(3, P.grassRadius), per = 9;
       let placed = 0, guard = 0;
       while (placed < want && guard < want * 6) {
         guard++;
@@ -270,7 +273,7 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
         const patch = fbm(noise, cx * .10, 21, cz * .10, 3) * .5 + .5;
         if (rng() > patch * 1.35) continue;
         for (let b = 0; b < per && placed < want; b++) {
-          const ba = rng() * TAU, br = rng() * .26;
+          const ba = rng() * TAU, br = rng() * .34;
           const x = cx + Math.cos(ba) * br, z = cz + Math.sin(ba) * br, y = heightAt(x, z);
           const near = P.water ? clamp(1 - (y - P.waterLevel) / 1.6, 0, 1) : 0;
           d.position.set(x, y - .02, z);
@@ -283,6 +286,7 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
           c.setHSL(lerp(.20, .31, moist) + (rng() - .5) * .06 * P.grassVar - near * .04,
             clamp(lerp(.38, .62, moist) + (rng() - .5) * .25 * P.grassVar, .15, .85),
             clamp(lerp(.30, .48, moist) * (.75 + rng() * .6), .12, .72), THREE.SRGBColorSpace);
+          if (rng() < .16) c.setHSL(.12 + rng() * .05, .45 + rng() * .2, .34 + rng() * .16, THREE.SRGBColorSpace);
           gc[placed * 3] = c.r; gc[placed * 3 + 1] = c.g; gc[placed * 3 + 2] = c.b;
           gb[placed] = y; gh[placed] = hgt; ga[placed] = .985; placed++;
         }
@@ -324,6 +328,26 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
       group.add(rm); rocks = rm;
     }
     stats.rocks = nR;
+    dispose(twigs); twigs = null;
+    const nT = Math.round(P.rocks * 4) + 60;
+    {
+      const tg = new THREE.BoxGeometry(1, .05, .07);
+      const tim = new THREE.InstancedMesh(tg, twigMat, nT);
+      const tc = new Float32Array(nT * 3), d = new THREE.Object3D(), c = new THREE.Color();
+      for (let i = 0; i < nT; i++) {
+        const a = rng() * TAU, rr = Math.sqrt(rng()) * Math.max(8, P.grassRadius * 1.3);
+        const x = Math.cos(a) * rr, z = Math.sin(a) * rr;
+        d.position.set(x, heightAt(x, z) + .02, z);
+        d.rotation.set((rng() - .5) * .3, rng() * TAU, (rng() - .5) * .3);
+        const s = .3 + rng() * 1.1; d.scale.set(s, .6 + rng(), .6 + rng());
+        d.updateMatrix(); tim.setMatrixAt(i, d.matrix);
+        c.setHSL(.08 + rng() * .04, .3 + rng() * .2, .16 + rng() * .14, THREE.SRGBColorSpace);
+        tc[i * 3] = c.r; tc[i * 3 + 1] = c.g; tc[i * 3 + 2] = c.b;
+      }
+      tim.instanceColor = new THREE.InstancedBufferAttribute(tc, 3);
+      tim.castShadow = true; tim.receiveShadow = true; tim.frustumCulled = false;
+      group.add(tim); twigs = tim;
+    }
     dispose(flowers); flowers = null;
     const nF = Math.round(P.flowers);
     if (nF > 0) {
@@ -383,7 +407,6 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
     yield { p: 1, label: 'ландшафт готов' };
     return stats;
   }
-  /* --- кисти --- */
   function sculpt(x, z, tool, radius, strength, hardness, dt, target) {
     const ci = (x / size + .5) * (N - 1), cj = (z / size + .5) * (N - 1);
     const ri = Math.ceil(radius / cell) + 1;
