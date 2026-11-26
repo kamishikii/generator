@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clamp, lerp, TAU, mulberry32, makeNoise3D, fbm, ridged } from './noise.js';
 import { windify } from './engine.js';
-import { leafTexture, photoLeaf } from './textures.js';
+import { leafTexture, leafScan } from './textures.js';
 
 class Hash {
   constructor(c) { this.inv = 1 / c; this.m = new Map(); }
@@ -35,7 +35,7 @@ export function createForest(U, barkTex, mobile) {
   const kinds = ['cluster', 'broad', 'needle', 'bloom'];
   const leafTex = {}, leafMats = {};
   for (const k of kinds) {
-      leafTex[k] = (k === 'cluster' || k === 'broad') ? photoLeaf() : leafTexture(k, mobile ? 160 : 256);
+    leafTex[k] = (k === 'cluster' || k === 'broad') ? leafScan(mobile ? 256 : 512) : leafTexture(k, mobile ? 160 : 256);
     leafMats[k] = windify(new THREE.MeshStandardMaterial({ map: leafTex[k], alphaTest: .42, side: THREE.DoubleSide, roughness: .66, metalness: 0 }),
       U, { key: 'leaf' + k, base: 'object', height: 'ref', ref: 12, flutter: .05, backlight: true });
   }
@@ -46,6 +46,12 @@ export function createForest(U, barkTex, mobile) {
     for (let i = 0; i < p.count; i++) p.setZ(i, .07 * Math.cos(p.getY(i) * Math.PI));
     g.translate(0, .5, 0); g.computeVertexNormals(); return g;
   })();
+  const jointGeo = (() => {
+    const g = new THREE.IcosahedronGeometry(1, 1);
+    const n = g.attributes.position.count;
+    g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(n * 3).fill(1), 3));
+    return g;
+  })();
   const skelMat = new THREE.LineBasicMaterial({ color: 0x9ef01a, transparent: true, opacity: .5 });
   const ringMat = new THREE.MeshBasicMaterial({ color: 0x9ef01a, transparent: true, opacity: .85, side: THREE.DoubleSide });
   const ring = new THREE.Mesh(new THREE.RingGeometry(.9, 1.05, 48), ringMat);
@@ -54,7 +60,7 @@ export function createForest(U, barkTex, mobile) {
   const trees = [];
   let nextId = 1;
   function newTree(p, x, z, jitter) {
-    const t = { id: nextId++, p: Object.assign({}, p), jitter: jitter || { h: 1, t: 1, c: 1, ch: 0, hue: 0 }, x, z, baseY: 0, height: p.height, crownR: 3, group: new THREE.Group(), wood: null, leaves: null, litter: null, skel: null, stats: { nodes: 0, branches: 0, woodTris: 0, leafTris: 0, leaves: 0, seg: 0, auto: false, ms: 0 } };
+    const t = { id: nextId++, p: Object.assign({}, p), jitter: jitter || { h: 1, t: 1, c: 1, ch: 0, hue: 0 }, x, z, baseY: 0, height: p.height, crownR: 3, group: new THREE.Group(), wood: null, leaves: null, litter: null, joints: null, skel: null, stats: { nodes: 0, branches: 0, woodTris: 0, leafTris: 0, leaves: 0, seg: 0, auto: false, ms: 0 } };
     t.group.position.set(x, 0, z);
     group.add(t.group); trees.push(t); return t;
   }
@@ -63,11 +69,11 @@ export function createForest(U, barkTex, mobile) {
     disposeTree(t); group.remove(t.group); trees.splice(i, 1);
   }
   function disposeTree(t) {
-    for (const m of [t.wood, t.leaves, t.litter, t.skel]) {
+    for (const m of [t.wood, t.leaves, t.litter, t.joints, t.skel]) {
       if (!m) continue;
-      t.group.remove(m); if (m.isInstancedMesh) m.dispose(); if (m.geometry) m.geometry.dispose();
+      t.group.remove(m); if (m.isInstancedMesh) m.dispose(); if (m.geometry && m.geometry !== jointGeo) m.geometry.dispose();
     }
-    t.wood = t.leaves = t.litter = t.skel = null;
+    t.wood = t.leaves = t.litter = t.joints = t.skel = null;
   }
   function select(t) {
     ring.visible = !!t;
@@ -84,7 +90,7 @@ export function createForest(U, barkTex, mobile) {
     const H = P.height, env = envelope(P), trunkR = Math.min(P.trunk, H * .10);
     const want = H * lerp(.055, .010, P.detail);
     const kk = 30 + P.crown / 120;
-    const seg = Math.max(want, kk * H / Q.maxNodes);
+    const seg = Math.max(want * .7, kk * H / (Q.maxNodes * 1.6));
     t.stats.seg = seg; t.stats.auto = seg > want * 1.02;
     const di = Math.max(seg * 4.2, env.r * .22), dk = seg * 1.55;
 
@@ -166,7 +172,7 @@ export function createForest(U, barkTex, mobile) {
       }
       for (const f of fresh) ph.near(f.x, f.y, f.z, p => { if (p.active && (p.x - f.x) ** 2 + (p.y - f.y) ** 2 + (p.z - f.z) ** 2 < dk2) { p.active = false; active--; } });
       if (iter % 10 === 0) yield { p: .05 + .42 * Math.min(1, iter / 220), label: 'рост #' + t.id };
-      if (list.length >= Q.maxNodes || active <= 0) break;
+      if (list.length >= Q.maxNodes * 1.6 || active <= 0) break;
     }
     const EXP = 2.35, tipR = .022 * Math.max(.6, H / 13);
     for (let i = list.length - 1; i >= 0; i--) {
@@ -205,11 +211,11 @@ export function createForest(U, barkTex, mobile) {
     for (let pi = 0; pi < paths.length; pi++) {
       const chain = paths[pi].nodes; if (chain.length < 2) continue;
       const r0 = chain[0].r;
-      const radial = Math.max(3, Math.min(24, Math.round(Q.radial * clamp(r0 / .22, .34, 1.4))));
+      const radial = Math.max(7, Math.min(24, Math.round(Q.radial * clamp(r0 / .22, .5, 1.4))));
       T.set(chain[1].x - chain[0].x, chain[1].y - chain[0].y, chain[1].z - chain[0].z).normalize();
       Nv.set(0, 1, 0); if (Math.abs(T.dot(Nv)) > .9) Nv.set(1, 0, 0);
       Nv.crossVectors(T, Nv).normalize(); pT.copy(T);
-      const base = pos.length / 3, stride = radial + 1, uS = TAU * r0 / .6;
+      const base = pos.length / 3, stride = radial + 1, uS = TAU * r0 / 2.2;
       for (let i = 0; i < chain.length; i++) {
         const c = chain[i];
         if (i === 0) T.set(chain[1].x - c.x, chain[1].y - c.y, chain[1].z - c.z);
@@ -237,10 +243,11 @@ export function createForest(U, barkTex, mobile) {
           const nx = Nv.x * ca + B.x * sa, ny = Nv.y * ca + B.y * sa, nz = Nv.z * ca + B.z * sa;
           const px = c.x + nx * rr, py = c.y + ny * rr, pz = c.z + nz * rr;
           pos.push(px, py, pz); nor.push(nx, ny, nz);
-          uv.push(j / radial * uS, c.dist / .6); gr.push(c.grow);
+          uv.push(j / radial * uS + t.id * .37, c.dist / 2.2); gr.push(c.grow);
           const mn = fbm(noise, px * .8, py * .6, pz * .8, 3) * .5 + .5;
           const m = clamp(mn * (1 - clamp(py / 2.8, 0, 1)) * (.45 + .55 * Math.max(0, -nz)), 0, 1) * P.moss;
-          col.push(bc.r * lerp(1, .38, m), bc.g * lerp(1, .58, m), bc.b * lerp(1, .30, m));
+          const mac = .82 + .36 * (fbm(noise, px * .12, py * .1, pz * .12, 2) * .5 + .5);
+          col.push(bc.r * lerp(1, .38, m) * mac, bc.g * lerp(1, .58, m) * mac, bc.b * lerp(1, .30, m) * mac);
         }
       }
       for (let i = 0; i < chain.length - 1; i++) for (let j = 0; j < radial; j++) {
@@ -251,7 +258,7 @@ export function createForest(U, barkTex, mobile) {
       if (!last.children || !last.children.length) {
         const ti = pos.length / 3;
         pos.push(last.x + T.x * last.r * 1.7, last.y + T.y * last.r * 1.7, last.z + T.z * last.r * 1.7);
-        nor.push(T.x, T.y, T.z); uv.push(.5, last.dist / .6 + .1); gr.push(Math.min(1, last.grow + .005)); col.push(bc.r, bc.g, bc.b);
+        nor.push(T.x, T.y, T.z); uv.push(.5, last.dist / 2.2 + .1); gr.push(Math.min(1, last.grow + .005)); col.push(bc.r, bc.g, bc.b);
         const rb = base + (chain.length - 1) * stride;
         for (let j = 0; j < radial; j++) idx.push(rb + j, rb + j + 1, ti);
       }
@@ -322,6 +329,25 @@ export function createForest(U, barkTex, mobile) {
       lit.instanceColor = new THREE.InstancedBufferAttribute(lc, 3);
       lit.receiveShadow = true; lit.frustumCulled = false;
     }
+    const joints = list.filter(n => n.children.length > 1);
+    let jm = null;
+    if (joints.length) {
+      jm = new THREE.InstancedMesh(jointGeo, barkMat, joints.length);
+      const jd = new THREE.Object3D(), jcol = new THREE.Color();
+      for (let i = 0; i < joints.length; i++) {
+        const n = joints[i];
+        jd.position.set(n.x, n.y, n.z);
+        const s = n.r * 1.22;
+        jd.scale.set(s, s * .9, s);
+        jd.rotation.set(rng() * 3, rng() * 3, rng() * 3);
+        jd.updateMatrix(); jm.setMatrixAt(i, jd.matrix);
+        jcol.copy(bc).multiplyScalar(.85 + rng() * .3);
+        jm.setColorAt(i, jcol);
+      }
+      jm.instanceMatrix.needsUpdate = true;
+      if (jm.instanceColor) jm.instanceColor.needsUpdate = true;
+      jm.castShadow = true; jm.receiveShadow = true; jm.frustumCulled = false;
+    }
     const sp = [];
     for (const n of list) if (n.parent) sp.push(n.parent.x, n.parent.y, n.parent.z, n.x, n.y, n.z);
     const sg = new THREE.BufferGeometry();
@@ -333,6 +359,7 @@ export function createForest(U, barkTex, mobile) {
     t.group.add(t.wood);
     if (lm) { t.leaves = lm; t.group.add(lm); }
     if (lit) { t.litter = lit; t.group.add(lit); }
+    if (jm) { t.joints = jm; t.group.add(jm); }
     t.skel = new THREE.LineSegments(sg, skelMat); t.skel.frustumCulled = false; t.group.add(t.skel);
     t.baseY = baseY; t.height = H; t.crownR = env.r;
     t.group.position.set(t.x, baseY, t.z);
