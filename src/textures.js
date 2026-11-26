@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, lerp, fbm, ridged, mulberry32 } from './noise.js';
+import { clamp, lerp, fbm, ridged, mulberry32, makeNoise3D } from './noise.js';
 
 export function canvas2d(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 export function toTex(c, srgb = true, repeat = true) {
@@ -8,7 +8,6 @@ export function toTex(c, srgb = true, repeat = true) {
   t.wrapS = t.wrapT = repeat ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
   t.anisotropy = 4; t.needsUpdate = true; return t;
 }
-/* --- ФОТО-СКАНЫ: если файл лежит в public/tex, текстура тихо заменяется на фото --- */
 const photoLoader = new THREE.TextureLoader();
 function photoUpgrade(t, file) {
   return new Promise(resolve => {
@@ -18,6 +17,22 @@ function photoUpgrade(t, file) {
       resolve(true);
     }, undefined, () => resolve(false));
   });
+}
+export function leafScan(size) {
+  const t = leafTexture('cluster', size);
+  const x = t.image.getContext('2d');
+  const base = import.meta.env.BASE_URL + 'tex/';
+  photoLoader.load(base + 'leaf_col.png', col => {
+    photoLoader.load(base + 'leaf_alpha.png', al => {
+      x.clearRect(0, 0, size, size);
+      x.drawImage(col.image, 0, 0, size, size);
+      x.globalCompositeOperation = 'destination-in';
+      x.drawImage(al.image, 0, 0, size, size);
+      x.globalCompositeOperation = 'source-over';
+      t.needsUpdate = true;
+    }, undefined, () => {});
+  }, undefined, () => {});
+  return t;
 }
 function normalCanvas(H, w, h, s) {
   const c = canvas2d(w, h), x = c.getContext('2d'), o = x.createImageData(w, h), d = o.data;
@@ -75,6 +90,9 @@ export function barkTextures(n, w) {
   photoUpgrade(set.roughnessMap, 'bark_rough.jpg');
   return set;
 }
+export function photoBark() { return barkTextures(makeNoise3D(90210), 256); }
+export function photoGround() { return groundTextures(makeNoise3D(90210), 256); }
+export function photoLeaf() { return leafScan(256); }
 
 function leafPath(x, kind, cx, cy, s, rot) {
   x.save(); x.translate(cx, cy); x.rotate(rot); x.scale(s, s);
@@ -105,9 +123,7 @@ export function leafTexture(kind, size) {
     for (const [px, py, s, ro] of [[.5, .22, .40, -.1], [.26, .42, .36, -.7], [.74, .42, .36, .7], [.34, .70, .34, -.4], [.68, .72, .34, .5], [.5, .52, .38, .15]])
       leafPath(x, 'broad', px * size, py * size, s * S * (.9 + r() * .2), ro);
   } else leafPath(x, kind, 64 * S, 64 * S, S, 0);
-  const t = toTex(c, true, false);
-  if (kind === 'cluster' || kind === 'broad') photoUpgrade(t, 'leaf_cluster.png');
-  return t;
+  return toTex(c, true, false);
 }
 export function groundTextures(noise, size) {
   const H = new Float32Array(size * size);
@@ -154,7 +170,6 @@ export function flowerTexture(size) {
   x.fillStyle = '#ffe9a8'; x.beginPath(); x.arc(32 * S, 26 * S, 5.5 * S, 0, 6.283); x.fill();
   return toTex(c, true, false);
 }
-/* --- кожа: поры, пятнышки, микрорельеф --- */
 export function skinTextures(noise, size) {
   const H = new Float32Array(size * size);
   const c = canvas2d(size, size), x = c.getContext('2d'), im = x.createImageData(size, size), d = im.data;
@@ -206,7 +221,6 @@ export function hairTextures(noise, size) {
   x.putImageData(im, 0, 0);
   return { map: toTex(c), normalMap: toTex(normalCanvas(H, size, size, 2.4), false) };
 }
-/* --- глаз: склера с сосудами, радужка с волокнами, зрачок --- */
 export function eyeTexture(size, irisHex) {
   const c = canvas2d(size, size), x = c.getContext('2d'), S = size / 256, R = size / 2;
   x.fillStyle = '#f2ece6'; x.fillRect(0, 0, size, size);
@@ -242,7 +256,3 @@ export function eyeTexture(size, irisHex) {
   x.fillStyle = 'rgba(255,255,255,.5)'; x.beginPath(); x.ellipse(R - ir * .3, R - ir * .34, ir * .17, ir * .12, -.6, 0, 6.283); x.fill();
   return toTex(c, true, false);
 }
-import { makeNoise3D } from './noise.js';
-export function photoBark() { return barkTextures(makeNoise3D(90210), 256); }
-export function photoGround() { return groundTextures(makeNoise3D(90210), 256); }
-export function photoLeaf() { return leafTexture('cluster', 256); }
