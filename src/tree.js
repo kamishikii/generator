@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clamp, lerp, TAU, mulberry32, makeNoise3D, fbm, ridged } from './noise.js';
 import { windify } from './engine.js';
-import { leafTexture, leafScan } from './textures.js';
+import { leafTexture, leafVariants } from './textures.js';
 
 class Hash {
   constructor(c) { this.inv = 1 / c; this.m = new Map(); }
@@ -36,9 +36,9 @@ export function createForest(U, barkTex, mobile) {
   const kinds = ['cluster', 'broad', 'needle', 'bloom'];
   const leafTex = {}, leafMats = {};
   for (const k of kinds) {
-    leafTex[k] = (k === 'cluster' || k === 'broad') ? leafScan(mobile ? 256 : 512) : leafTexture(k, mobile ? 160 : 256);
+    leafTex[k] = (k === 'cluster' || k === 'broad') ? leafVariants(mobile ? 256 : 512) : leafTexture(k, mobile ? 160 : 256);
     leafMats[k] = windify(new THREE.MeshStandardMaterial({ map: leafTex[k], alphaTest: .42, side: THREE.DoubleSide, roughness: .66, metalness: 0 }),
-      U, { key: 'leaf' + k, base: 'object', height: 'ref', ref: 12, flutter: .05, backlight: true });
+      U, { key: 'leaf' + k, base: 'object', height: 'ref', ref: 12, flutter: .05, backlight: true, uvJitter: (k === 'cluster' || k === 'broad') });
   }
   new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'tex/leaf_nor.png', nt => {
     nt.colorSpace = THREE.NoColorSpace;
@@ -50,7 +50,7 @@ export function createForest(U, barkTex, mobile) {
     }
   }, undefined, () => {});
   const litterMat = windify(new THREE.MeshStandardMaterial({ map: leafTex.broad, alphaTest: .42, side: THREE.DoubleSide, roughness: .9, metalness: 0 }),
-    U, { key: 'litter', base: 'object', height: 'ref', ref: 3, flutter: 0 });
+    U, { key: 'litter', base: 'object', height: 'ref', ref: 3, flutter: 0, uvJitter: true });
   const leafGeo = (() => {
     const g = new THREE.PlaneGeometry(1, 1, 1, 2), p = g.attributes.position;
     for (let i = 0; i < p.count; i++) p.setZ(i, .07 * Math.cos(p.getY(i) * Math.PI));
@@ -200,7 +200,11 @@ export function createForest(U, barkTex, mobile) {
     }
     const f = trunkR / list[0].r; let maxD = 0;
     for (const n of list) { n.r *= f; if (n.y < 1.4) n.r *= 1 + (.55 + P.roots * .9) * Math.exp(-n.y / .45); if (n.dist > maxD) maxD = n.dist; }
-    for (const n of list) n.grow = maxD > 0 ? n.dist / maxD : 0;
+    for (const n of list) {
+      const k = clamp(n.dist / Math.max(.001, maxD), 0, 1);
+      n.r = Math.min(n.r, trunkR * Math.pow(1 - k, 1.15) + tipR);
+      n.grow = maxD > 0 ? n.dist / maxD : 0;
+    }
     yield { p: .5, label: 'радиусы #' + t.id };
 
     const paths = [];
@@ -291,29 +295,34 @@ export function createForest(U, barkTex, mobile) {
     geo.computeBoundingSphere();
     yield { p: .78, label: 'сборка #' + t.id };
 
-    const tips = list.filter(n => !n.children.length || (n.r < trunkR * .07 && n.order > 4));
+    const tips = list.filter(n => n.order > 2 && n.r < trunkR * .3);
+    const anchors = tips.length ? tips : list.filter(n => !n.children.length);
     const want2 = Math.min(Math.round(P.leaves), Q.leafCap);
     let lm = null; let ltw = null;
-    if (want2 > 0 && tips.length) {
+    if (want2 > 0 && anchors.length) {
       const lg = leafGeo.clone();
       lm = new THREE.InstancedMesh(lg, leafMats[P.leafShape] || leafMats.broad, want2);
-      const lc = new Float32Array(want2 * 3), la = new Float32Array(want2);
+      const lc = new Float32Array(want2 * 3), la = new Float32Array(want2), lo = new Float32Array(want2 * 2);
       const d = new THREE.Object3D(), c = new THREE.Color(), dir = new THREE.Vector3();
       const bcol = new THREE.Color(P.leafColor), hsl = { h: 0, s: 0, l: 0 };
       bcol.getHSL(hsl, THREE.SRGBColorSpace);
       const hs = H / 13, needle = P.leafShape === 'needle', cluster = P.leafShape === 'cluster';
+      const QUAD = [[0, 0], [.5, 0], [0, .5], [.5, .5]];
       for (let i = 0; i < want2; i++) {
-        const n = tips[(rng() * tips.length) | 0], pp = n.parent || n;
+        const n = anchors[(rng() * anchors.length) | 0], pp = n.parent || n, s = rng();
+        const px = lerp(pp.x, n.x, s), py = lerp(pp.y, n.y, s), pz = lerp(pp.z, n.z, s);
         dir.set(n.x - pp.x, n.y - pp.y, n.z - pp.z);
         if (dir.lengthSq() < 1e-8) dir.set(0, 1, 0); else dir.normalize();
-        d.position.set(n.x + (rng() - .5) * .06, n.y + (rng() - .5) * .06, n.z + (rng() - .5) * .06);
+        d.position.set(px + (rng() - .5) * .05, py + (rng() - .5) * .05, pz + (rng() - .5) * .05);
         d.quaternion.setFromUnitVectors(UPV, dir);
         d.rotateY(rng() * TAU);
         d.rotateX((rng() - .5) * .7);
         const sc = P.leafSize * hs * (.7 + rng() * .6) * (cluster ? .6 : .3);
         d.scale.set(sc * (needle ? .34 : 1), sc * (needle ? 1.75 : 1), sc);
         d.updateMatrix(); lm.setMatrixAt(i, d.matrix);
-        const inner = clamp(1 - Math.hypot(n.x, n.z) / Math.max(1, env.r), 0, 1);
+        const q = QUAD[(rng() * 4) | 0];
+        lo[i * 2] = q[0]; lo[i * 2 + 1] = q[1];
+        const inner = clamp(1 - Math.hypot(px, pz) / Math.max(1, env.r), 0, 1);
         c.setHSL((hsl.h + (rng() - .5) * .07 * P.leafVar + 1) % 1, clamp(hsl.s + (rng() - .5) * .32 * P.leafVar, 0, 1),
           clamp(hsl.l * (.78 + .5 * rng()) * (1 - .26 * inner), .04, .96), THREE.SRGBColorSpace);
         lc[i * 3] = c.r; lc[i * 3 + 1] = c.g; lc[i * 3 + 2] = c.b;
@@ -321,6 +330,7 @@ export function createForest(U, barkTex, mobile) {
         if (i % 8000 === 0) yield { p: .78 + .16 * (i / want2), label: 'листва #' + t.id };
       }
       lg.setAttribute('aGrow', new THREE.InstancedBufferAttribute(la, 1));
+      lg.setAttribute('aOff', new THREE.InstancedBufferAttribute(lo, 2));
       lm.instanceColor = new THREE.InstancedBufferAttribute(lc, 3);
       lm.instanceMatrix.needsUpdate = true;
       lm.castShadow = true; lm.receiveShadow = true; lm.frustumCulled = false;
@@ -342,6 +352,10 @@ export function createForest(U, barkTex, mobile) {
     const nL = Math.round(P.litter || 0);
     if (nL > 0) {
       const gg = new THREE.PlaneGeometry(1, 1); gg.rotateX(-Math.PI / 2);
+      const lo2 = new Float32Array(nL * 2);
+      const QUAD2 = [[0, 0], [.5, 0], [0, .5], [.5, .5]];
+      for (let i = 0; i < nL; i++) { const q = QUAD2[(rng() * 4) | 0]; lo2[i * 2] = q[0]; lo2[i * 2 + 1] = q[1]; }
+      gg.setAttribute('aOff', new THREE.InstancedBufferAttribute(lo2, 2));
       lit = new THREE.InstancedMesh(gg, litterMat, nL);
       const lc = new Float32Array(nL * 3), la = new Float32Array(nL);
       const d = new THREE.Object3D(), c = new THREE.Color();
