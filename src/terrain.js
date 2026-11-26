@@ -59,21 +59,54 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
   const paintTex = toTex(paintCv, true, false);
   paintTex.flipY = false;
   const landMat = new THREE.MeshStandardMaterial({
-    map: paintTex, normalMap: groundTex.normalMap, normalScale: new THREE.Vector2(1.0, 1.0),
+    map: paintTex, normalMap: groundTex.normalMap, normalScale: new THREE.Vector2(1.6, 1.6),
     vertexColors: true, roughness: 1, metalness: 0, dithering: true
   });
+  landMat.extensions = { derivatives: true };
   const NL = String.fromCharCode(10);
   const LT = String.fromCharCode(60), GT = String.fromCharCode(62);
   const INC_COMMON = '#include ' + LT + 'common' + GT;
   const INC_MAP = '#include ' + LT + 'map_fragment' + GT;
+  const whiteTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+  whiteTex.needsUpdate = true;
   const detailU = { value: groundTex.map }, mixU = { value: 0 };
+  const dispU = { value: whiteTex }, dispOn = { value: 0 };
   if (groundTex.ready) groundTex.ready.then(ok => { if (ok) mixU.value = 1; });
+  new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'tex/ground_disp.jpg', dt => {
+    dt.wrapS = dt.wrapT = THREE.RepeatWrapping;
+    dispU.value = dt; dispOn.value = 1;
+  }, undefined, () => {});
   landMat.onBeforeCompile = sh => {
     sh.uniforms.tDetail = detailU;
     sh.uniforms.uDetailMix = mixU;
+    sh.uniforms.tDisp = dispU;
+    sh.uniforms.uDispOn = dispOn;
     sh.fragmentShader = sh.fragmentShader
-      .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDetail;' + NL + 'uniform float uDetailMix;')
-      .replace(INC_MAP, INC_MAP + NL + 'vec3 det = texture2D(tDetail, vMapUv * 55.0).rgb * 2.3;' + NL + 'diffuseColor.rgb *= mix(vec3(1.0), det, uDetailMix);');
+      .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDetail;' + NL + 'uniform float uDetailMix;' + NL + 'uniform sampler2D tDisp;' + NL + 'uniform float uDispOn;')
+      .replace(INC_MAP, INC_MAP + NL + [
+        'vec2 uvD = vMapUv * 55.0;',
+        'if (uDispOn > 0.5) {',
+        '  vec3 dp1 = dFdx(vViewPosition); vec3 dp2 = dFdy(vViewPosition);',
+        '  vec2 du1 = dFdx(vMapUv); vec2 du2 = dFdy(vMapUv);',
+        '  vec3 T = normalize(dp1 * du2.y - dp2 * du1.y);',
+        '  vec3 B = normalize(dp2 * du1.x - dp1 * du2.x);',
+        '  vec3 Nn = normalize(cross(T, B));',
+        '  vec3 V = normalize(vViewPosition);',
+        '  vec2 ds = vec2(dot(V, T), dot(V, B)) / max(dot(V, Nn), 0.3) * 0.02;',
+        '  vec2 p = vec2(0.0); float ld = 0.0;',
+        '  for (int i = 0; i < 8; i++) {',
+        '    float hh = texture2D(tDisp, uvD - p).r;',
+        '    if (hh < ld) break;',
+        '    p += ds * 0.125; ld += 0.125;',
+        '  }',
+        '  uvD -= p;',
+        '  vMapUv = uvD / 55.0;',
+        '  vNormalMapUv = uvD / 55.0;',
+        '}',
+        'vec3 det = texture2D(tDetail, uvD).rgb * 2.3;',
+        'diffuseColor.rgb *= mix(vec3(1.0), det, uDetailMix);',
+        'diffuseColor.rgb *= mix(1.0, 0.7 + 0.6 * texture2D(tDisp, uvD).r, uDispOn);'
+      ].join(NL));
   };
   const grassMat = windify(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .78, metalness: 0, side: THREE.DoubleSide }), U, { key: 'grass', base: 'instance', height: 'attr', flutter: .09 });
   const flowerMat = windify(new THREE.MeshStandardMaterial({ map: flowerTexture(mobile ? 64 : 96), alphaTest: .4, side: THREE.DoubleSide, roughness: .7 }), U, { key: 'flower', base: 'instance', height: 'attr', flutter: .05 });
@@ -163,7 +196,7 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
     dispose(land);
     land = new THREE.Mesh(g, landMat);
     land.receiveShadow = true; land.frustumCulled = false; group.add(land);
-    landMat.normalMap.repeat.set(size / 3.2, size / 3.2);
+    landMat.normalMap.repeat.set(55, 55);
     const wp = new Float32Array(N * N * 3), wd = new Float32Array(N * N);
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const v = gi(i, j); wp[v * 3] = wx(i); wp[v * 3 + 2] = wz(j); }
     const wg = new THREE.BufferGeometry();
@@ -257,16 +290,20 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
   function* scatter(P, Q) {
     const rng = mulberry32((P.seed * 17 + 3) >>> 0);
     dispose(grass); grass = null;
-    const want = Math.min(Math.round(P.grassCount * 2.5), Q.grassCap * 4);
+    const R = Math.max(3, P.grassRadius);
+    const areaK = clamp((R * R) / 256, 1, 4);
+    const want = Math.min(Math.round(P.grassCount * 2.5 * areaK), Q.grassCap * 4);
     if (want > 0) {
       const bg = bladeGeometry(), gm = new THREE.InstancedMesh(bg, grassMat, want);
       const gc = new Float32Array(want * 3), gb = new Float32Array(want), gh = new Float32Array(want), ga = new Float32Array(want);
       const d = new THREE.Object3D(), c = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
-      const R = Math.max(3, P.grassRadius), per = 16;
+      const per = 16;
       let placed = 0, guard = 0;
       while (placed < want && guard < want * 6) {
         guard++;
         const a = rng() * TAU, rr = Math.sqrt(rng()) * R;
+        const edge = clamp((R - rr) / (R * .3), 0, 1);
+        if (rng() > edge * .92 + .08) continue;
         const cx = Math.cos(a) * rr, cz = Math.sin(a) * rr;
         if (normalAt(cx, cz).y < .66) continue;
         const cy = heightAt(cx, cz);
