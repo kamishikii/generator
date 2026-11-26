@@ -39,6 +39,15 @@ export function createForest(U, barkTex, mobile) {
     leafMats[k] = windify(new THREE.MeshStandardMaterial({ map: leafTex[k], alphaTest: .42, side: THREE.DoubleSide, roughness: .66, metalness: 0 }),
       U, { key: 'leaf' + k, base: 'object', height: 'ref', ref: 12, flutter: .05, backlight: true });
   }
+  new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'tex/leaf_nor.png', nt => {
+    nt.colorSpace = THREE.NoColorSpace;
+    nt.wrapS = nt.wrapT = THREE.ClampToEdgeWrapping;
+    for (const k of ['cluster', 'broad']) {
+      leafMats[k].normalMap = nt;
+      leafMats[k].normalScale = new THREE.Vector2(.7, .7);
+      leafMats[k].needsUpdate = true;
+    }
+  }, undefined, () => {});
   const litterMat = windify(new THREE.MeshStandardMaterial({ map: leafTex.broad, alphaTest: .42, side: THREE.DoubleSide, roughness: .9, metalness: 0 }),
     U, { key: 'litter', base: 'object', height: 'ref', ref: 3, flutter: 0 });
   const leafGeo = (() => {
@@ -52,6 +61,7 @@ export function createForest(U, barkTex, mobile) {
     g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(n * 3).fill(1), 3));
     return g;
   })();
+  const UPV = new THREE.Vector3(0, 1, 0);
   const skelMat = new THREE.LineBasicMaterial({ color: 0x9ef01a, transparent: true, opacity: .5 });
   const ringMat = new THREE.MeshBasicMaterial({ color: 0x9ef01a, transparent: true, opacity: .85, side: THREE.DoubleSide });
   const ring = new THREE.Mesh(new THREE.RingGeometry(.9, 1.05, 48), ringMat);
@@ -84,9 +94,14 @@ export function createForest(U, barkTex, mobile) {
 
   function* build(t, Q, groundAt, waterY) {
     const t0 = performance.now();
-    const P = t.p;
-    const rng = mulberry32((P.seed || 1) >>> 0);
-    const noise = makeNoise32((P.seed || 1) * 7919 + 13);
+    const rng = mulberry32((Pseed(t)) >>> 0);
+    const P = Object.assign({}, t.p);
+    P.height = t.p.height * (.86 + rng() * .28);
+    P.trunk = t.p.trunk * (.85 + rng() * .3);
+    P.chaos = clamp(t.p.chaos + (rng() - .5) * .34, 0, 1);
+    P.droop = t.p.droop + (rng() - .5) * .22;
+    P.crown = Math.round(t.p.crown * (.8 + rng() * .45));
+    const noise = makeNoise32((t.p.seed || 1) * 7919 + 13);
     const H = P.height, env = envelope(P), trunkR = Math.min(P.trunk, H * .10);
     const want = H * lerp(.055, .010, P.detail);
     const kk = 30 + P.crown / 120;
@@ -281,20 +296,22 @@ export function createForest(U, barkTex, mobile) {
       const lg = leafGeo.clone();
       lm = new THREE.InstancedMesh(lg, leafMats[P.leafShape] || leafMats.broad, want2);
       const lc = new Float32Array(want2 * 3), la = new Float32Array(want2);
-      const d = new THREE.Object3D(), c = new THREE.Color();
+      const d = new THREE.Object3D(), c = new THREE.Color(), dir = new THREE.Vector3();
       const bcol = new THREE.Color(P.leafColor), hsl = { h: 0, s: 0, l: 0 };
       bcol.getHSL(hsl, THREE.SRGBColorSpace);
       const hs = H / 13, needle = P.leafShape === 'needle', cluster = P.leafShape === 'cluster';
       for (let i = 0; i < want2; i++) {
-        const n = tips[(rng() * tips.length) | 0], pp = n.parent || n, s = rng();
-        const px = lerp(pp.x, n.x, s), py = lerp(pp.y, n.y, s), pz = lerp(pp.z, n.z, s);
-        const j = .14 * hs * P.leafSize;
-        d.position.set(px + (rng() - .5) * j * 2, py + (rng() - .5) * j, pz + (rng() - .5) * j * 2);
-        d.rotation.set(-Math.PI / 2 + (rng() - .5) * 1.5 + (needle ? .35 : 0), rng() * TAU, (rng() - .5) * .85, 'YXZ');
-        const sc = P.leafSize * hs * (.7 + rng() * .6) * (cluster ? .40 : .21);
+        const n = tips[(rng() * tips.length) | 0], pp = n.parent || n;
+        dir.set(n.x - pp.x, n.y - pp.y, n.z - pp.z);
+        if (dir.lengthSq() < 1e-8) dir.set(0, 1, 0); else dir.normalize();
+        d.position.set(n.x + (rng() - .5) * .06, n.y + (rng() - .5) * .06, n.z + (rng() - .5) * .06);
+        d.quaternion.setFromUnitVectors(UPV, dir);
+        d.rotateY(rng() * TAU);
+        d.rotateX((rng() - .5) * .7);
+        const sc = P.leafSize * hs * (.7 + rng() * .6) * (cluster ? .85 : .35);
         d.scale.set(sc * (needle ? .34 : 1), sc * (needle ? 1.75 : 1), sc);
         d.updateMatrix(); lm.setMatrixAt(i, d.matrix);
-        const inner = clamp(1 - Math.hypot(px, pz) / Math.max(1, env.r), 0, 1);
+        const inner = clamp(1 - Math.hypot(n.x, n.z) / Math.max(1, env.r), 0, 1);
         c.setHSL((hsl.h + (rng() - .5) * .07 * P.leafVar + 1) % 1, clamp(hsl.s + (rng() - .5) * .32 * P.leafVar, 0, 1),
           clamp(hsl.l * (.78 + .5 * rng()) * (1 - .26 * inner), .04, .96), THREE.SRGBColorSpace);
         lc[i * 3] = c.r; lc[i * 3 + 1] = c.g; lc[i * 3 + 2] = c.b;
@@ -332,7 +349,9 @@ export function createForest(U, barkTex, mobile) {
     const joints = list.filter(n => n.children.length > 1);
     let jm = null;
     if (joints.length) {
-      jm = new THREE.InstancedMesh(jointGeo, barkMat, joints.length);
+      const jg = jointGeo.clone();
+      const ja = new Float32Array(joints.length);
+      jm = new THREE.InstancedMesh(jg, barkMat, joints.length);
       const jd = new THREE.Object3D(), jcol = new THREE.Color();
       for (let i = 0; i < joints.length; i++) {
         const n = joints[i];
@@ -343,7 +362,9 @@ export function createForest(U, barkTex, mobile) {
         jd.updateMatrix(); jm.setMatrixAt(i, jd.matrix);
         jcol.copy(bc).multiplyScalar(.85 + rng() * .3);
         jm.setColorAt(i, jcol);
+        ja[i] = Math.min(1, n.grow + .012);
       }
+      jg.setAttribute('aGrow', new THREE.InstancedBufferAttribute(ja, 1));
       jm.instanceMatrix.needsUpdate = true;
       if (jm.instanceColor) jm.instanceColor.needsUpdate = true;
       jm.castShadow = true; jm.receiveShadow = true; jm.frustumCulled = false;
@@ -370,6 +391,7 @@ export function createForest(U, barkTex, mobile) {
     yield { p: 1, label: 'дерево #' + t.id + ' готово' };
     return t.stats;
   }
+  function Pseed(t) { return (t.p.seed || 1) * 31 + t.id * 101; }
 
   function pick(o, d) {
     let best = null, bt = Infinity;
