@@ -34,6 +34,57 @@ export function leafScan(size) {
   }, undefined, () => {});
   return t;
 }
+export function leafVariants(size) {
+  const cell = size;
+  const atlas = canvas2d(cell * 2, cell * 2);
+  const ax = atlas.getContext('2d');
+  const out = toTex(atlas, true, false);
+  const base = import.meta.env.BASE_URL + 'tex/';
+  photoLoader.load(base + 'leaf_col.png', col => {
+    photoLoader.load(base + 'leaf_alpha.png', al => {
+      const w = col.image.width, h = col.image.height;
+      const tmp = canvas2d(w, h), tx = tmp.getContext('2d');
+      tx.drawImage(col.image, 0, 0);
+      tx.globalCompositeOperation = 'destination-in';
+      tx.drawImage(al.image, 0, 0);
+      tx.globalCompositeOperation = 'source-over';
+      const data = tx.getImageData(0, 0, w, h).data;
+      const seen = new Uint8Array(w * h);
+      const comps = [];
+      for (let s = 0; s < w * h; s++) {
+        if (seen[s] || data[s * 4 + 3] < 128) continue;
+        const stack = [s]; seen[s] = 1;
+        let minx = w, miny = h, maxx = 0, maxy = 0, cnt = 0;
+        while (stack.length) {
+          const p = stack.pop(), x = p % w, y = (p / w) | 0;
+          cnt++;
+          if (x < minx) minx = x; if (x > maxx) maxx = x;
+          if (y < miny) miny = y; if (y > maxy) maxy = y;
+          if (x > 0 && !seen[p - 1] && data[(p - 1) * 4 + 3] >= 128) { seen[p - 1] = 1; stack.push(p - 1); }
+          if (x < w - 1 && !seen[p + 1] && data[(p + 1) * 4 + 3] >= 128) { seen[p + 1] = 1; stack.push(p + 1); }
+          if (y > 0 && !seen[p - w] && data[(p - w) * 4 + 3] >= 128) { seen[p - w] = 1; stack.push(p - w); }
+          if (y < h - 1 && !seen[p + w] && data[(p + w) * 4 + 3] >= 128) { seen[p + w] = 1; stack.push(p + w); }
+        }
+        if (cnt > w * h * 0.004) comps.push({ minx, miny, maxx, maxy, cnt });
+      }
+      comps.sort((a, b) => b.cnt - a.cnt);
+      ax.clearRect(0, 0, cell * 2, cell * 2);
+      for (let v = 0; v < 4; v++) {
+        const cx = (v % 2) * cell, cy = ((v / 2) | 0) * cell;
+        const c = comps[v];
+        if (c) {
+          const cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
+          const s = Math.min(cell / cw, cell / ch) * 0.92;
+          ax.drawImage(tmp, c.minx, c.miny, cw, ch, cx + (cell - cw * s) / 2, cy + (cell - ch * s) / 2, cw * s, ch * s);
+        } else {
+          ax.drawImage(tmp, 0, 0, w, h, cx, cy, cell, cell);
+        }
+      }
+      out.needsUpdate = true;
+    }, undefined, () => {});
+  }, undefined, () => {});
+  return out;
+}
 function normalCanvas(H, w, h, s) {
   const c = canvas2d(w, h), x = c.getContext('2d'), o = x.createImageData(w, h), d = o.data;
   const at = (i, j) => H[((j + h) % h) * w + ((i + w) % w)];
@@ -92,7 +143,7 @@ export function barkTextures(n, w) {
 }
 export function photoBark() { return barkTextures(makeNoise3D(90210), 256); }
 export function photoGround() { return groundTextures(makeNoise3D(90210), 256); }
-export function photoLeaf() { return leafScan(256); }
+export function photoLeaf() { return leafVariants(256); }
 
 function leafPath(x, kind, cx, cy, s, rot) {
   x.save(); x.translate(cx, cy); x.rotate(rot); x.scale(s, s);
