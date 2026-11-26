@@ -155,7 +155,7 @@ export function createEngine(canvas, stage, U, opts) {
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
       vertexShader: `attribute float aSeed;attribute float aSize;uniform float uTime,uPR,uRange,uSpeed,uSway,uBase;varying float vB;
       void main(){vec3 p=position;float t=uTime*uSpeed+aSeed*37.0;p.y=uBase+mod(p.y+t*0.35,uRange);
-      p.x+=sin(t*0.6+aSeed*6.28)*uSway;p.z+=cos(t*0.47+aSeed*4.1)*uSway;
+      p.x+=sin(t*0.6+aSeed*6.28)*uSway;p.z+=cos(t*0.47+aSeed*6.28)*uSway;
       vec4 mv=modelViewMatrix*vec4(p,1.0);gl_PointSize=aSize*uPR*(260.0/max(0.001,-mv.z));
       gl_Position=projectionMatrix*mv;vB=0.35+0.65*pow(max(0.0,sin(uTime*2.1+aSeed*24.0)),2.0);}`,
       fragmentShader: `uniform vec3 uColor;uniform float uInt;varying float vB;
@@ -173,7 +173,7 @@ export function createEngine(canvas, stage, U, opts) {
   quad.frustumCulled = false; postScene.add(quad);
   const VS = 'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.0,1.0);}';
   const mkRT = s => new THREE.WebGLRenderTarget(2, 2, { type: TYPE, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: s > 0, samples: Math.min(s, maxSamples) });
-  let Q = opts.quality;
+  let Q = Object.assign({}, opts.quality, { msaa: Math.max(4, opts.quality.msaa || 0), pr: Math.max(1.5, opts.quality.pr || 1) });
   let sceneRT = mkRT(Q.msaa || 1), brightA = mkRT(0), brightB = mkRT(0), raysRT = mkRT(0);
   const brightMat = new THREE.ShaderMaterial({ uniforms: { tSrc: { value: null }, uTh: { value: hdr ? .72 : .62 } }, vertexShader: VS, depthTest: false, depthWrite: false,
     fragmentShader: `uniform sampler2D tSrc;uniform float uTh;varying vec2 vUv;
@@ -268,9 +268,10 @@ export function createEngine(canvas, stage, U, opts) {
     pollen.material.uniforms.uPR.value = pr; flies.material.uniforms.uPR.value = pr;
   }
   function setQuality(q) {
-    Q = q; key.shadow.mapSize.set(q.shadow, q.shadow);
+    Q = Object.assign({}, q, { msaa: Math.max(4, q.msaa || 0), pr: Math.max(1.5, q.pr || 1) });
+    key.shadow.mapSize.set(q.shadow, q.shadow);
     if (key.shadow.map) { key.shadow.map.dispose(); key.shadow.map = null; }
-    sceneRT.dispose(); sceneRT = mkRT(q.msaa || 1); resize(); renderer.shadowMap.needsUpdate = true;
+    sceneRT.dispose(); sceneRT = mkRT(Q.msaa || 1); resize(); renderer.shadowMap.needsUpdate = true;
   }
   function render(now, P) {
     renderer.info.reset();
