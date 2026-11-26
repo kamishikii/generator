@@ -59,14 +59,14 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
   const paintTex = toTex(paintCv, true, false);
   paintTex.flipY = false;
   const landMat = new THREE.MeshStandardMaterial({
-    map: paintTex, normalMap: groundTex.normalMap, normalScale: new THREE.Vector2(1.6, 1.6),
+    map: paintTex, normalMap: groundTex.normalMap, normalScale: new THREE.Vector2(2.2, 2.2),
     vertexColors: true, roughness: 1, metalness: 0, dithering: true
   });
-  landMat.extensions = { derivatives: true };
   const NL = String.fromCharCode(10);
   const LT = String.fromCharCode(60), GT = String.fromCharCode(62);
   const INC_COMMON = '#include ' + LT + 'common' + GT;
   const INC_MAP = '#include ' + LT + 'map_fragment' + GT;
+  const INC_BEGIN = '#include ' + LT + 'begin_vertex' + GT;
   const whiteTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
   whiteTex.needsUpdate = true;
   const detailU = { value: groundTex.map }, mixU = { value: 0 };
@@ -81,31 +81,15 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
     sh.uniforms.uDetailMix = mixU;
     sh.uniforms.tDisp = dispU;
     sh.uniforms.uDispOn = dispOn;
+    sh.vertexShader = sh.vertexShader
+      .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDisp;' + NL + 'uniform float uDispOn;')
+      .replace(INC_BEGIN, INC_BEGIN + NL + 'transformed += normal * (texture2D(tDisp, uv * 55.0).r - 0.5) * 0.18 * uDispOn;');
     sh.fragmentShader = sh.fragmentShader
       .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDetail;' + NL + 'uniform float uDetailMix;' + NL + 'uniform sampler2D tDisp;' + NL + 'uniform float uDispOn;')
       .replace(INC_MAP, INC_MAP + NL + [
-        'vec2 uvD = vMapUv * 55.0;',
-        'if (uDispOn > 0.5) {',
-        '  vec3 dp1 = dFdx(vViewPosition); vec3 dp2 = dFdy(vViewPosition);',
-        '  vec2 du1 = dFdx(vMapUv); vec2 du2 = dFdy(vMapUv);',
-        '  vec3 T = normalize(dp1 * du2.y - dp2 * du1.y);',
-        '  vec3 B = normalize(dp2 * du1.x - dp1 * du2.x);',
-        '  vec3 Nn = normalize(cross(T, B));',
-        '  vec3 V = normalize(vViewPosition);',
-        '  vec2 ds = vec2(dot(V, T), dot(V, B)) / max(dot(V, Nn), 0.3) * 0.02;',
-        '  vec2 p = vec2(0.0); float ld = 0.0;',
-        '  for (int i = 0; i < 8; i++) {',
-        '    float hh = texture2D(tDisp, uvD - p).r;',
-        '    if (hh < ld) break;',
-        '    p += ds * 0.125; ld += 0.125;',
-        '  }',
-        '  uvD -= p;',
-        '  vMapUv = uvD / 55.0;',
-        '  vNormalMapUv = uvD / 55.0;',
-        '}',
-        'vec3 det = texture2D(tDetail, uvD).rgb * 2.3;',
+        'vec3 det = texture2D(tDetail, vMapUv * 55.0).rgb * 2.3;',
         'diffuseColor.rgb *= mix(vec3(1.0), det, uDetailMix);',
-        'diffuseColor.rgb *= mix(1.0, 0.7 + 0.6 * texture2D(tDisp, uvD).r, uDispOn);'
+        'diffuseColor.rgb *= mix(1.0, 0.65 + 0.7 * texture2D(tDisp, vMapUv * 55.0).r, uDispOn);'
       ].join(NL));
   };
   const grassMat = windify(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .78, metalness: 0, side: THREE.DoubleSide }), U, { key: 'grass', base: 'instance', height: 'attr', flutter: .09 });
