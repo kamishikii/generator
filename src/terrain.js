@@ -13,14 +13,15 @@ export const PAINTS = [
 ];
 
 function bladeGeometry() {
-  const rows = [0, .38, .72, 1], w = .085, pos = [], col = [], idx = [];
+  const rows = [0, .3, .6, .82, 1], w = .012, pos = [], col = [], idx = [];
   for (let i = 0; i < rows.length; i++) {
-    const t = rows[i], hw = w * (1 - t * .9), z = .30 * t * t, sh = .48 + t * .85;
-    if (i === rows.length - 1) { pos.push(0, t, z); col.push(sh * 1.18, sh * 1.08, sh * .72); }
-    else { pos.push(-hw, t, z, hw, t, z); col.push(sh * .92, sh, sh * .82, sh * .92, sh, sh * .82); }
+    const t = rows[i], hw = w * (1 - t * .92), z = .34 * t * t, sh = .40 + t * .85;
+    if (i === rows.length - 1) { pos.push(0, t, z); col.push(sh * 1.22, sh * 1.1, sh * .68); }
+    else { pos.push(-hw, t, z, hw, t, z); col.push(sh * .8, sh * .92, sh * .7, sh * .8, sh * .92, sh * .7); }
   }
   for (let i = 0; i < rows.length - 2; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-  idx.push(4, 5, 6);
+  const last = (rows.length - 2) * 2;
+  idx.push(last, last + 1, last + 2);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -256,12 +257,12 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
   function* scatter(P, Q) {
     const rng = mulberry32((P.seed * 17 + 3) >>> 0);
     dispose(grass); grass = null;
-    const want = Math.min(Math.round(P.grassCount), Q.grassCap);
+    const want = Math.min(Math.round(P.grassCount * 2.5), Q.grassCap * 4);
     if (want > 0) {
       const bg = bladeGeometry(), gm = new THREE.InstancedMesh(bg, grassMat, want);
       const gc = new Float32Array(want * 3), gb = new Float32Array(want), gh = new Float32Array(want), ga = new Float32Array(want);
       const d = new THREE.Object3D(), c = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
-      const R = Math.max(3, P.grassRadius), per = 9;
+      const R = Math.max(3, P.grassRadius), per = 16;
       let placed = 0, guard = 0;
       while (placed < want && guard < want * 6) {
         guard++;
@@ -273,7 +274,7 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
         const patch = fbm(noise, cx * .10, 21, cz * .10, 3) * .5 + .5;
         if (rng() > patch * 1.35) continue;
         for (let b = 0; b < per && placed < want; b++) {
-          const ba = rng() * TAU, br = rng() * .34;
+          const ba = rng() * TAU, br = rng() * .3;
           const x = cx + Math.cos(ba) * br, z = cz + Math.sin(ba) * br, y = heightAt(x, z);
           const near = P.water ? clamp(1 - (y - P.waterLevel) / 1.6, 0, 1) : 0;
           d.position.set(x, y - .02, z);
@@ -286,7 +287,7 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
           c.setHSL(lerp(.20, .31, moist) + (rng() - .5) * .06 * P.grassVar - near * .04,
             clamp(lerp(.38, .62, moist) + (rng() - .5) * .25 * P.grassVar, .15, .85),
             clamp(lerp(.30, .48, moist) * (.75 + rng() * .6), .12, .72), THREE.SRGBColorSpace);
-          if (rng() < .16) c.setHSL(.12 + rng() * .05, .45 + rng() * .2, .34 + rng() * .16, THREE.SRGBColorSpace);
+          if (rng() < .22) c.setHSL(.11 + rng() * .06, .42 + rng() * .25, .30 + rng() * .2, THREE.SRGBColorSpace);
           gc[placed * 3] = c.r; gc[placed * 3 + 1] = c.g; gc[placed * 3 + 2] = c.b;
           gb[placed] = y; gh[placed] = hgt; ga[placed] = .985; placed++;
         }
