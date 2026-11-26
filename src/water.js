@@ -2,51 +2,38 @@ import * as THREE from 'three';
 
 export function createWaterMaterial(U) {
   return new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
     uniforms: {
-      uTime: U.time, uSun: U.sunDir, uSunColor: U.sunColor, uHor: U.skyHor, uZen: U.skyZen,
-      uFogColor: U.fogColor, uFogDensity: U.fogDensity,
-      uWaves: { value: .6 }, uFlow: { value: new THREE.Vector2(1, .25) },
-      uShallow: { value: new THREE.Color('#4b9c86') }, uDeep: { value: new THREE.Color('#0a2c40') }
+      uTime: U.time, uWaves: { value: .6 }, uFlow: { value: new THREE.Vector2(.2, .1) },
+      uSunDir: U.sunDir, uSunColor: U.sunColor, uSkyHor: U.skyHor, uSkyZen: U.skyZen,
+      uFogColor: U.fogColor, uFogDensity: U.fogDensity
     },
-    transparent: true, depthWrite: false, side: THREE.DoubleSide,
-    vertexShader: `
-      attribute float aDepth;
-      varying float vD; varying vec3 vW; varying float vDist;
-      void main(){
-        vD = aDepth;
-        vec4 w = modelMatrix * vec4(position,1.0);
-        vW = w.xyz;
-        vec4 mv = viewMatrix * w;
-        vDist = -mv.z;
-        gl_Position = projectionMatrix * mv;
-      }`,
-    fragmentShader: `
-      uniform float uTime,uWaves,uFogDensity;
-      uniform vec3 uSun,uSunColor,uHor,uZen,uFogColor,uShallow,uDeep;
-      uniform vec2 uFlow;
-      varying float vD; varying vec3 vW; varying float vDist;
-      void main(){
-        if(vD <= 0.014) discard;
-        vec2 f = uFlow*uTime*0.35;
-        float a1 = sin((vW.x*0.55+vW.z*0.31)+uTime*1.25+f.x);
-        float a2 = sin((vW.x*-0.37+vW.z*0.72)-uTime*0.95+f.y);
-        float a3 = sin((vW.x*1.9+vW.z*1.3)+uTime*2.4);
-        float amp = uWaves*(0.05+0.05*smoothstep(0.0,2.0,vD));
-        vec3 N = normalize(vec3((a1*0.6+a2*0.4+a3*0.18)*amp*6.0,1.0,(a2*0.6-a1*0.35+a3*0.2)*amp*6.0));
-        vec3 V = normalize(cameraPosition - vW);
-        float fres = pow(1.0-clamp(dot(N,V),0.0,1.0),4.0);
-        vec3 sky = mix(uHor,uZen,0.45);
-        vec3 col = mix(mix(uShallow,uDeep,smoothstep(0.0,2.6,vD)), sky, fres*0.72);
-        vec3 H = normalize(V+normalize(uSun));
-        col += uSunColor*pow(max(dot(N,H),0.0),240.0)*3.2;
-        col += uSunColor*pow(max(dot(N,H),0.0),24.0)*0.10;
-        float shore = smoothstep(0.36,0.02,vD);
-        float foam = shore*(0.45+0.55*sin(vW.x*3.1+vW.z*2.7+uTime*2.2));
-        col += vec3(0.86,0.93,0.96)*max(0.0,foam)*0.6;
-        float alpha = max(mix(0.58,0.94,smoothstep(0.0,1.3,vD)), shore*0.85);
-        float fog = 1.0-exp(-pow(vDist*uFogDensity,2.0));
-        col = mix(col,uFogColor,clamp(fog,0.0,1.0));
-        gl_FragColor = vec4(col,alpha);
-      }`
+    vertexShader: `attribute float aDepth; varying float vDepth; varying vec3 vWp; varying vec3 vView;
+    void main(){ vDepth = aDepth; vec4 wp = modelMatrix * vec4(position, 1.0); vWp = wp.xyz;
+      vec4 mv = viewMatrix * wp; vView = -mv.xyz; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform float uTime, uWaves, uFogDensity; uniform vec2 uFlow;
+    uniform vec3 uSunDir, uSunColor, uSkyHor, uSkyZen, uFogColor;
+    varying float vDepth; varying vec3 vWp; varying vec3 vView;
+    float hgt(vec2 p){ return sin(p.x*1.7+uTime*1.1)*.5 + sin(p.y*2.3-uTime*.9)*.35 + sin((p.x+p.y)*3.1+uTime*1.7)*.25; }
+    void main(){
+      vec2 p = vWp.xz * 0.8 + uFlow * uTime * 0.3;
+      float e = 0.15; float h0 = hgt(p);
+      vec3 N = normalize(vec3((hgt(p+vec2(e,0.0))-h0)*uWaves*0.6, 1.0, (hgt(p+vec2(0.0,e))-h0)*uWaves*0.6));
+      vec3 V = normalize(vView);
+      float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+      vec3 deep = vec3(0.02, 0.10, 0.12);
+      vec3 shallow = vec3(0.10, 0.30, 0.30);
+      vec3 sky = mix(uSkyHor, uSkyZen, 0.5);
+      vec3 col = mix(mix(deep, shallow, clamp(vDepth*0.5, 0.0, 1.0)), sky, clamp(fres*0.85+0.08, 0.0, 1.0));
+      vec3 H = normalize(V + normalize(uSunDir));
+      col += uSunColor * pow(max(dot(N, H), 0.0), 180.0) * 1.2;
+      float foam = smoothstep(0.25, 0.0, vDepth) * (0.5 + 0.5*sin(p.x*6.0 + uTime*2.0));
+      col = mix(col, vec3(0.9), clamp(foam*0.6, 0.0, 0.6));
+      float alpha = mix(0.55, 0.92, clamp(fres + vDepth*0.3, 0.0, 1.0));
+      float fd = length(vView);
+      float fogF = 1.0 - exp(-uFogDensity*uFogDensity*fd*fd);
+      col = mix(col, uFogColor, clamp(fogF, 0.0, 1.0));
+      gl_FragColor = vec4(col, alpha);
+    }`
   });
 }
