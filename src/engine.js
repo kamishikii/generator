@@ -21,7 +21,7 @@ gl_Position = projectionMatrix * mvPosition;
 `;
 
 export function windify(mat, U, o = {}) {
-  const opt = Object.assign({ key: 'w', flutter: 0, grow: true, backlight: false, base: 'object', height: 'ref', ref: 12 }, o);
+  const opt = Object.assign({ key: 'w', flutter: 0, grow: true, backlight: false, base: 'object', height: 'ref', ref: 12, uvJitter: false }, o);
   const uF = { value: opt.flutter }, uRef = { value: opt.ref };
   const baseExpr = opt.base === 'instance' ? 'aBase' : 'modelMatrix[3].y';
   const hExpr = opt.height === 'attr' ? 'max( aH, 0.02 )' : 'uRef';
@@ -34,9 +34,11 @@ export function windify(mat, U, o = {}) {
     if (opt.base === 'instance') decl += 'attribute float aBase;';
     if (opt.height === 'attr') decl += 'attribute float aH;';
     if (opt.grow) decl += 'attribute float aGrow;';
+    if (opt.uvJitter) decl += 'attribute vec2 aOff;';
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\n' + decl)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGrowH = ' + (opt.grow ? 'aGrow' : '1.0') + ';')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>' + (opt.uvJitter ? '\nvMapUv = vMapUv * 0.5 + aOff;\n#ifdef USE_NORMALMAP\nvNormalMapUv = vNormalMapUv * 0.5 + aOff;\n#endif' : ''))
       .replace('#include <project_vertex>', WIND.replace('__BASE__', baseExpr).replace('__H__', hExpr));
     let fd = 'varying float vGrowH;', disc = '', em = '';
     if (opt.grow) {
@@ -53,7 +55,7 @@ export function windify(mat, U, o = {}) {
       .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>' + disc)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + em);
   };
-  mat.customProgramCacheKey = () => 'w_' + opt.key + opt.base + opt.height + (opt.grow ? 'g' : '') + (opt.backlight ? 'l' : '');
+  mat.customProgramCacheKey = () => 'w_' + opt.key + opt.base + opt.height + (opt.grow ? 'g' : '') + (opt.backlight ? 'l' : '') + (opt.uvJitter ? 'u' : '');
   mat.userData.uF = uF; mat.userData.uRef = uRef;
   return mat;
 }
