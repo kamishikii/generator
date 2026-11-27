@@ -26,7 +26,7 @@ vec4 lp = instanceMatrix * vec4( transformed, 1.0 );
 vec4 lp = vec4( transformed, 1.0 );
 #endif
 float vDist = length( ( modelViewMatrix * lp ).xyz );
-transformed.xz *= mix( 1.0, 2.6, smoothstep( 18.0, 60.0, vDist ) );
+transformed.xz *= mix( 1.0, 3.2, smoothstep( 12.0, 50.0, vDist ) );
 `;
 
 export function windify(mat, U, o = {}) {
@@ -70,10 +70,10 @@ export function windify(mat, U, o = {}) {
 }
 
 const STOPS = [
-  { t: 0, hor: '#14343f', zen: '#04080e', sun: '#7fb0ff', key: '#6f92cc', ki: .75, hi: .26, si: .55 },
-  { t: .28, hor: '#ff8a3d', zen: '#123c4e', sun: '#ffd39a', key: '#ffb066', ki: 3.2, hi: .50, si: 1 },
-  { t: .62, hor: '#cfe6ea', zen: '#1f6f9e', sun: '#fff3d6', key: '#fff0d0', ki: 3.55, hi: .78, si: .85 },
-  { t: 1, hor: '#eaf6f2', zen: '#2a86b8', sun: '#ffffff', key: '#ffffff', ki: 3.85, hi: .98, si: .70 }
+  { t: 0, hor: '#14343f', zen: '#04080e', sun: '#7fb0ff', key: '#6f92cc', ki: .75, hi: .30, si: .55 },
+  { t: .28, hor: '#ff8a3d', zen: '#123c4e', sun: '#ffd39a', key: '#ffb066', ki: 3.2, hi: .60, si: 1 },
+  { t: .62, hor: '#cfe6ea', zen: '#1f6f9e', sun: '#fff3d6', key: '#fff0d0', ki: 3.3, hi: .95, si: .85 },
+  { t: 1, hor: '#eaf6f2', zen: '#2a86b8', sun: '#ffffff', key: '#ffffff', ki: 3.6, hi: 1.10, si: .70 }
 ];
 
 export function createEngine(canvas, stage, U, opts) {
@@ -114,12 +114,12 @@ export function createEngine(canvas, stage, U, opts) {
   const key = new THREE.DirectionalLight(0xffb066, 3.2);
   key.castShadow = true; key.target = keyTarget;
   key.shadow.camera.near = 1; key.shadow.camera.far = 600;
-  key.shadow.bias = -.0006; key.shadow.normalBias = .05;
+  key.shadow.bias = -.0004; key.shadow.normalBias = .08;
   scene.add(key);
   const rim = new THREE.DirectionalLight(0x38e6ff, .95); scene.add(rim);
   const fill = new THREE.DirectionalLight(0xffc98a, .32); scene.add(fill);
-  const hemi = new THREE.HemisphereLight(0x2a6f8a, 0x1d2a1c, .5); scene.add(hemi);
-  const amb = new THREE.AmbientLight(0x30443c, .18); scene.add(amb);
+  const hemi = new THREE.HemisphereLight(0x2a6f8a, 0x2a3324, .5); scene.add(hemi);
+  const amb = new THREE.AmbientLight(0x30443c, .24); scene.add(amb);
 
   const cA = new THREE.Color(), cB = new THREE.Color();
   const mix = (a, b, t, out) => { cA.set(a); cB.set(b); out.copy(cA).lerp(cB, t); return out; };
@@ -144,7 +144,7 @@ export function createEngine(canvas, stage, U, opts) {
     hemi.color.copy(skyU.uZen.value).lerp(new THREE.Color(0xffffff), .25);
     rim.position.set(-sunDir.x * 90, focusY + 40, -sunDir.z * 90); rim.intensity = .95 * P.lightInt;
     fill.position.set(-sunDir.z * 60, focusY + 14, sunDir.x * 60); fill.intensity = .32 * P.lightInt;
-    amb.intensity = .18 * P.lightInt;
+    amb.intensity = .24 * P.lightInt;
     scene.fog.color.copy(skyU.uHor.value).lerp(skyU.uZen.value, .55).multiplyScalar(.8);
     scene.fog.density = P.fog; U.fogDensity.value = P.fog;
     renderer.shadowMap.needsUpdate = true;
@@ -199,7 +199,7 @@ export function createEngine(canvas, stage, U, opts) {
     void main(){vec2 uv=vUv;vec2 st=(uv-uSun)*(uDensity/24.0);vec3 s=vec3(0.0);float il=1.0;
     for(int i=0;i<24;i++){uv-=st;s+=texture2D(tSrc,clamp(uv,0.0,1.0)).rgb*il*uWeight;il*=uDecay;}gl_FragColor=vec4(s,1.0);}` });
   const compMat = new THREE.ShaderMaterial({
-    uniforms: { tScene: { value: null }, tBloom: { value: null }, tRays: { value: null }, uBloom: { value: .6 }, uRays: { value: .6 }, uSunVis: { value: 1 }, uExposure: { value: 1 }, uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uGrain: { value: (opts.grain || 0) * 0.4 }, uVig: { value: .42 }, uAspect: { value: 1 }, uCA: { value: opts.mobile ? 0 : 0.002 } },
+    uniforms: { tScene: { value: null }, tBloom: { value: null }, tRays: { value: null }, uBloom: { value: .6 }, uRays: { value: .6 }, uSunVis: { value: 1 }, uExposure: { value: 1.06 }, uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uGrain: { value: (opts.grain || 0) * 0.4 }, uVig: { value: .30 }, uAspect: { value: 1 }, uCA: { value: opts.mobile ? 0 : 0.002 } },
     vertexShader: VS, depthTest: false, depthWrite: false,
     fragmentShader: `uniform sampler2D tScene,tBloom,tRays;uniform float uBloom,uRays,uSunVis,uExposure,uTime,uGrain,uVig,uAspect,uCA;uniform vec2 uRes;varying vec2 vUv;
     vec3 aces(vec3 x){return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0);}
