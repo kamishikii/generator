@@ -1,3 +1,4 @@
+
 import * as THREE from 'three';
 import { clamp, lerp, fbm, ridged, mulberry32, makeNoise3D } from './noise.js';
 
@@ -18,28 +19,53 @@ function photoUpgrade(t, file) {
     }, undefined, () => resolve(false));
   });
 }
-export function leafScan(size) {
-  const t = leafTexture('cluster', size);
-  const x = t.image.getContext('2d');
-  const base = import.meta.env.BASE_URL + 'tex/';
-  photoLoader.load(base + 'leaf_col.png', col => {
-    photoLoader.load(base + 'leaf_alpha.png', al => {
-      x.clearRect(0, 0, size, size);
-      x.drawImage(col.image, 0, 0, size, size);
-      x.globalCompositeOperation = 'destination-in';
-      x.drawImage(al.image, 0, 0, size, size);
-      x.globalCompositeOperation = 'source-over';
-      t.needsUpdate = true;
-    }, undefined, () => {});
-  }, undefined, () => {});
-  return t;
-}
-export function leafVariants(size) {
+export function leafAtlas(size) {
   const cell = size;
-  const atlas = canvas2d(cell * 2, cell * 2);
-  const ax = atlas.getContext('2d');
-  const out = toTex(atlas, true, false);
+  const cv = canvas2d(cell * 2, cell * 2);
+  const cx2 = cv.getContext('2d');
+  const out = toTex(cv, true, false);
   const base = import.meta.env.BASE_URL + 'tex/';
+  const cellXY = v => [(v % 2) * cell, ((v / 2) | 0) * cell];
+  const drawFit = (img, dx, dy) => {
+    const w = img.width, h = img.height;
+    const s = Math.min(cell / w, cell / h) * .94;
+    cx2.drawImage(img, dx + (cell - w * s) / 2, dy + (cell - h * s) / 2, w * s, h * s);
+  };
+  for (let v = 0; v < 4; v++) {
+    const [dx, dy] = cellXY(v);
+    const tmp = canvas2d(cell, cell), tx = tmp.getContext('2d');
+    const g = tx.createLinearGradient(0, cell, 0, 0);
+    g.addColorStop(0, '#7fa06a'); g.addColorStop(.5, '#a8c489'); g.addColorStop(1, '#cfe0b0');
+    tx.fillStyle = g;
+    tx.save(); tx.translate(cell / 2, cell / 2); tx.rotate(v * .7); tx.scale(cell / 140, cell / 140);
+    tx.beginPath(); tx.moveTo(0, 60);
+    tx.bezierCurveTo(-50 + v * 6, 24, -44 + v * 5, -36, 0, -60);
+    tx.bezierCurveTo(44 - v * 5, -36, 50 - v * 6, 24, 0, 60);
+    tx.closePath(); tx.fill(); tx.restore();
+    cx2.drawImage(tmp, dx, dy);
+  }
+  out.needsUpdate = true;
+  const putSpecies = (v, img) => {
+    const [dx, dy] = cellXY(v);
+    cx2.clearRect(dx, dy, cell, cell);
+    drawFit(img, dx, dy);
+    out.needsUpdate = true;
+  };
+  const loadSpecies = (v, name) => {
+    photoLoader.load(base + name + '.png', im => putSpecies(v, im.image), undefined, () => {
+      photoLoader.load(base + name + '_col.png', col => {
+        photoLoader.load(base + name + '_alpha.png', al => {
+          const w = col.image.width, h = col.image.height;
+          const tmp = canvas2d(w, h), tx = tmp.getContext('2d');
+          tx.drawImage(col.image, 0, 0);
+          tx.globalCompositeOperation = 'destination-in';
+          tx.drawImage(al.image, 0, 0);
+          tx.globalCompositeOperation = 'source-over';
+          putSpecies(v, tmp);
+        }, undefined, () => {});
+      }, undefined, () => {});
+    });
+  };
   photoLoader.load(base + 'leaf_col.png', col => {
     photoLoader.load(base + 'leaf_alpha.png', al => {
       const w = col.image.width, h = col.image.height;
@@ -68,19 +94,19 @@ export function leafVariants(size) {
         if (cnt > w * h * 0.004) comps.push({ minx, miny, maxx, maxy, cnt });
       }
       comps.sort((a, b) => b.cnt - a.cnt);
-      ax.clearRect(0, 0, cell * 2, cell * 2);
       for (let v = 0; v < 4; v++) {
-        const cx = (v % 2) * cell, cy = ((v / 2) | 0) * cell;
         const c = comps[v];
-        if (c) {
-          const cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
-          const s = Math.min(cell / cw, cell / ch) * 0.92;
-          ax.drawImage(tmp, c.minx, c.miny, cw, ch, cx + (cell - cw * s) / 2, cy + (cell - ch * s) / 2, cw * s, ch * s);
-        } else {
-          ax.drawImage(tmp, 0, 0, w, h, cx, cy, cell, cell);
-        }
+        if (!c) continue;
+        const [dx, dy] = cellXY(v);
+        cx2.clearRect(dx, dy, cell, cell);
+        const cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
+        const s = Math.min(cell / cw, cell / ch) * .92;
+        cx2.drawImage(tmp, c.minx, c.miny, cw, ch, dx + (cell - cw * s) / 2, dy + (cell - ch * s) / 2, cw * s, ch * s);
       }
       out.needsUpdate = true;
+      loadSpecies(1, 'leaf_b');
+      loadSpecies(2, 'leaf_c');
+      loadSpecies(3, 'leaf_d');
     }, undefined, () => {});
   }, undefined, () => {});
   return out;
@@ -143,7 +169,7 @@ export function barkTextures(n, w) {
 }
 export function photoBark() { return barkTextures(makeNoise3D(90210), 256); }
 export function photoGround() { return groundTextures(makeNoise3D(90210), 256); }
-export function photoLeaf() { return leafVariants(256); }
+export function photoLeaf() { return leafAtlas(256); }
 
 function leafPath(x, kind, cx, cy, s, rot) {
   x.save(); x.translate(cx, cy); x.rotate(rot); x.scale(s, s);
