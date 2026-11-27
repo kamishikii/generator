@@ -330,7 +330,7 @@ export function createForest(U, barkTex, mobile) {
         dir.x += (rng() - .5) * .35; dir.z += (rng() - .5) * .35;
         dir.normalize();
        const sc = P.leafSize * hs * (.7 + rng() * .6) * (cluster ? .6 : .3);
-        d.position.set(px - dir.x * sc * .45, py - dir.y * sc * .45, pz - dir.z * sc * .45);
+        d.position.set(px - dir.x * sc * .35, py - dir.y * sc * .35, pz - dir.z * sc * .35);
         d.quaternion.setFromUnitVectors(UPV, dir);
         d.rotateY(rng() * TAU);
         d.scale.set(sc * (needle ? .34 : 1), sc * (needle ? 1.75 : 1), sc);
@@ -356,7 +356,7 @@ export function createForest(U, barkTex, mobile) {
       for (let i = 0; i < want2; i++) {
         lm.getMatrixAt(i, twm);
         twm.decompose(twp, twq, tws);
-        tws.set(tws.y * .04, tws.y * .5, tws.y * .04);
+       tws.set(1, tws.y * .5, 1);
         twm.compose(twp, twq, tws);
         ltw.setMatrixAt(i, twm);
       }
