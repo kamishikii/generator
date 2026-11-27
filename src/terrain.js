@@ -12,6 +12,28 @@ export const PAINTS = [
   { k: 'moss', n: 'Мох', c: '#37642b' }
 ];
 
+const STOCH = `
+vec2 stHash(vec2 p){ return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453); }
+vec3 stTile(sampler2D t, vec2 uv, vec2 cell){
+  vec2 h = stHash(cell);
+  float ang = floor(h.x * 4.0) * 1.5707963;
+  vec2 c = uv - cell - 0.5;
+  float cs = cos(ang), sn = sin(ang);
+  c = mat2(cs, -sn, sn, cs) * c;
+  if (h.y > 0.5) c.x = -c.x;
+  return texture2D(t, c + 0.5).rgb;
+}
+vec3 stoch(sampler2D t, vec2 p){
+  vec2 i = floor(p); vec2 f = fract(p);
+  vec3 c00 = stTile(t, p, i);
+  vec3 c10 = stTile(t, p, i + vec2(1.0, 0.0));
+  vec3 c01 = stTile(t, p, i + vec2(0.0, 1.0));
+  vec3 c11 = stTile(t, p, i + vec2(1.0, 1.0));
+  vec2 w = f * f * (3.0 - 2.0 * f);
+  return mix(mix(c00, c10, w.x), mix(c01, c11, w.x), w.y);
+}
+`;
+
 function bladeGeometry() {
   const rows = [0, .3, .6, .82, 1], w = .012, pos = [], col = [], idx = [];
   for (let i = 0; i < rows.length; i++) {
@@ -82,17 +104,17 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
     sh.uniforms.tDisp = dispU;
     sh.uniforms.uDispOn = dispOn;
     sh.vertexShader = sh.vertexShader
-      .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDisp;' + NL + 'uniform float uDispOn;')
-      .replace(INC_BEGIN, INC_BEGIN + NL + 'transformed += normal * (texture2D(tDisp, uv * 55.0).r - 0.5) * 0.18 * uDispOn;');
+      .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDisp;' + NL + 'uniform float uDispOn;' + NL + STOCH)
+      .replace(INC_BEGIN, INC_BEGIN + NL + 'transformed += normal * (stoch(tDisp, uv * 55.0).r - 0.5) * 0.18 * uDispOn;');
     sh.fragmentShader = sh.fragmentShader
-      .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDetail;' + NL + 'uniform float uDetailMix;' + NL + 'uniform sampler2D tDisp;' + NL + 'uniform float uDispOn;')
+      .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDetail;' + NL + 'uniform float uDetailMix;' + NL + 'uniform sampler2D tDisp;' + NL + 'uniform float uDispOn;' + NL + STOCH)
       .replace(INC_MAP, INC_MAP + NL + [
-        'vec3 det = texture2D(tDetail, vMapUv * 55.0).rgb * 2.3;',
+        'vec3 det = stoch(tDetail, vMapUv * 55.0) * 1.6;',
         'diffuseColor.rgb *= mix(vec3(1.0), det, uDetailMix);',
-        'diffuseColor.rgb *= mix(1.0, 0.65 + 0.7 * texture2D(tDisp, vMapUv * 55.0).r, uDispOn);'
+        'diffuseColor.rgb *= mix(1.0, 0.7 + 0.6 * stoch(tDisp, vMapUv * 55.0).r, uDispOn);'
       ].join(NL));
   };
-  const grassMat = windify(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .78, metalness: 0, side: THREE.DoubleSide }), U, { key: 'grass', base: 'instance', height: 'attr', flutter: .09 });
+  const grassMat = windify(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .78, metalness: 0, side: THREE.DoubleSide }), U, { key: 'grass', base: 'instance', height: 'attr', flutter: .09, lodWidth: true });
   const flowerMat = windify(new THREE.MeshStandardMaterial({ map: flowerTexture(mobile ? 64 : 96), alphaTest: .4, side: THREE.DoubleSide, roughness: .7 }), U, { key: 'flower', base: 'instance', height: 'attr', flutter: .05 });
   const rockMat = new THREE.MeshStandardMaterial({ map: rockTex.map, normalMap: rockTex.normalMap, roughness: .95, color: 0xa8a8a0 });
   const twigMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .95, metalness: 0 });
