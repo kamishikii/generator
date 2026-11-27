@@ -32,6 +32,9 @@ vec3 stoch(sampler2D t, vec2 p){
   vec2 w = f * f * (3.0 - 2.0 * f);
   return mix(mix(c00, c10, w.x), mix(c01, c11, w.x), w.y);
 }
+float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+  return mix(mix(stHash(i).x, stHash(i+vec2(1.0,0.0)).x, f.x),
+             mix(stHash(i+vec2(0.0,1.0)).x, stHash(i+vec2(1.0,1.0)).x, f.x), f.y); }
 `;
 
 function bladeGeometry() {
@@ -72,6 +75,30 @@ function mark(attr, start, count) {
   try { if (attr.addUpdateRange) attr.addUpdateRange(start, count); } catch (e) {}
   attr.needsUpdate = true;
 }
+// FIX: плавное исчезновение травы/цветов вдаль, чтобы не было субпиксельных "зелёных пикселей"
+function addDistFade(mat, d0, d1) {
+  const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey;
+  mat.onBeforeCompile = sh => {
+    if (prev) prev(sh);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <clipping_planes_fragment>',
+      `#include <clipping_planes_fragment>
+       float fKeep = 1.0 - smoothstep(${d0.toFixed(1)}, ${d1.toFixed(1)}, length(vViewPosition));
+       if (fKeep < 0.015) discard;
+       if (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) > fKeep) discard;`);
+  };
+  mat.customProgramCacheKey = () => key() + 'fade';
+  return mat;
+}
+// FIX: выравнивание средней яркости detail-текстур, чтобы тайлы не прыгали по светлоте
+function lumFit(tex, uni) {
+  try {
+    const c = canvas2d(64, 64), x = c.getContext('2d');
+    x.drawImage(tex.image, 0, 0, 64, 64);
+    const d = x.getImageData(0, 0, 64, 64).data; let s = 0;
+    for (let i = 0; i < 64 * 64; i++) s += .2126 * d[i * 4] / 255 + .7152 * d[i * 4 + 1] / 255 + .0722 * d[i * 4 + 2] / 255;
+    uni.value = 0.5 / Math.max(1e-3, s / (64 * 64));
+  } catch (e) {}
+}
 
 export function createTerrainSystem(U, groundTex, rockTex, mobile) {
   const group = new THREE.Group();
@@ -80,6 +107,9 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
   const paintCtx = paintCv.getContext('2d', { willReadFrequently: true });
   const paintTex = toTex(paintCv, true, false);
   paintTex.flipY = false;
+  paintTex.anisotropy = 16;
+  groundTex.map.anisotropy = 16; groundTex.normalMap.anisotropy = 16;
+  rockTex.map.anisotropy = 16; rockTex.normalMap.anisotropy = 16;
   const landMat = new THREE.MeshStandardMaterial({
     map: paintTex, normalMap: groundTex.normalMap, normalScale: new THREE.Vector2(0.8, 0.8),
     vertexColors: true, roughness: 1, metalness: 0, dithering: true
@@ -95,18 +125,22 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
   const detailB = { value: whiteTex }, hasB = { value: 0 };
   const detailC = { value: whiteTex }, hasC = { value: 0 };
   const dispU = { value: whiteTex }, dispOn = { value: 0 };
-  if (groundTex.ready) groundTex.ready.then(ok => { if (ok) mixU.value = 1; });
-  const loadGround = (file, u, has) => {
+  const lumA = { value: 1 }, lumB = { value: 1 }, lumC = { value: 1 };
+  if (groundTex.ready) groundTex.ready.then(ok => { if (ok) { mixU.value = 1; lumFit(groundTex.map, lumA); } });
+  const loadGround = (file, u, has, lum) => {
     new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'tex/' + file, dt => {
       dt.wrapS = dt.wrapT = THREE.RepeatWrapping;
       dt.colorSpace = THREE.SRGBColorSpace;
+      dt.anisotropy = 16;
       u.value = dt; has.value = 1;
+      if (lum) lumFit(dt, lum);
     }, undefined, () => {});
   };
-  loadGround('ground_b_col.jpg', detailB, hasB);
-  loadGround('ground_c_col.jpg', detailC, hasC);
+  loadGround('ground_b_col.jpg', detailB, hasB, lumB);
+  loadGround('ground_c_col.jpg', detailC, hasC, lumC);
   new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'tex/ground_disp.jpg', dt => {
     dt.wrapS = dt.wrapT = THREE.RepeatWrapping;
+    dt.anisotropy = 16;
     dispU.value = dt; dispOn.value = 1;
   }, undefined, () => {});
   landMat.onBeforeCompile = sh => {
@@ -116,28 +150,32 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
     sh.uniforms.tDetailC = detailC; sh.uniforms.uHasC = hasC;
     sh.uniforms.tDisp = dispU;
     sh.uniforms.uDispOn = dispOn;
+    sh.uniforms.uLumA = lumA; sh.uniforms.uLumB = lumB; sh.uniforms.uLumC = lumC;
     sh.vertexShader = sh.vertexShader
       .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDisp;' + NL + 'uniform float uDispOn;' + NL + STOCH)
-      .replace(INC_BEGIN, INC_BEGIN + NL + 'transformed += normal * (stoch(tDisp, uv * 55.0).r - 0.5) * 0.18 * uDispOn;');
+      // FIX: гладкий шум вместо стохастики в вершинах (убирает фасеточные крапинки)
+      .replace(INC_BEGIN, INC_BEGIN + NL + 'transformed += normal * (vnoise(uv * 34.0) * 0.65 + vnoise(uv * 71.0 + 19.0) * 0.35 - 0.5) * 0.22 * uDispOn;');
     sh.fragmentShader = sh.fragmentShader
-      .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDetail;' + NL + 'uniform float uDetailMix;' + NL + 'uniform sampler2D tDetailB;' + NL + 'uniform float uHasB;' + NL + 'uniform sampler2D tDetailC;' + NL + 'uniform float uHasC;' + NL + 'uniform sampler2D tDisp;' + NL + 'uniform float uDispOn;' + NL + STOCH)
+      .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDetail;' + NL + 'uniform float uDetailMix;' + NL + 'uniform sampler2D tDetailB;' + NL + 'uniform float uHasB;' + NL + 'uniform sampler2D tDetailC;' + NL + 'uniform float uHasC;' + NL + 'uniform sampler2D tDisp;' + NL + 'uniform float uDispOn;' + NL + 'uniform float uLumA;' + NL + 'uniform float uLumB;' + NL + 'uniform float uLumC;' + NL + STOCH)
       .replace(INC_MAP, INC_MAP + NL + [
         'vec2 gp = vMapUv * 55.0;',
         'vec3 dA = stoch(tDetail, gp);',
         'vec3 dB = stoch(tDetailB, gp * 0.83 + 17.0);',
         'vec3 dC = stoch(tDetailC, gp * 1.21 + 41.0);',
-        'float mB = smoothstep(0.35, 0.65, stHash(floor(vMapUv * 9.0)).x) * uHasB;',
-        'float mC = smoothstep(0.40, 0.70, stHash(floor(vMapUv * 7.0) + 3.0).y) * uHasC;',
-        'vec3 det = mix(mix(dA, dB, mB), dC, mC * 0.6) * 1.6;',
-        'diffuseColor.rgb *= mix(vec3(1.0), det, uDetailMix);',
-        'diffuseColor.rgb *= mix(1.0, 0.7 + 0.6 * stoch(tDisp, gp).r, uDispOn);'
+        // FIX: маски вариантов — гладкий шум вместо квадратных ячеек floor(uv*9)
+        'float mB = smoothstep(0.40, 0.60, vnoise(vMapUv * 6.0 + 11.0)) * uHasB;',
+        'float mC = smoothstep(0.42, 0.62, vnoise(vMapUv * 4.3 + 71.0)) * uHasC;',
+        'vec3 det = mix(mix(dA * uLumA, dB * uLumB, mB), dC * uLumC, mC * 0.6);',
+        'diffuseColor.rgb *= mix(vec3(1.0), det, uDetailMix);'
       ].join(NL));
   };
-  const grassMat = windify(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .78, metalness: 0, side: THREE.DoubleSide }), U, { key: 'grass', base: 'instance', height: 'attr', flutter: .09, lodWidth: true });
-  const flowerMat = windify(new THREE.MeshStandardMaterial({ map: flowerTexture(mobile ? 64 : 96), alphaTest: .4, side: THREE.DoubleSide, roughness: .7 }), U, { key: 'flower', base: 'instance', height: 'attr', flutter: .05 });
+  const grassMat = addDistFade(windify(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .78, metalness: 0, side: THREE.DoubleSide }), U, { key: 'grass', base: 'instance', height: 'attr', flutter: .09, lodWidth: true }), 35, 55);
+  const flowerMat = addDistFade(windify(new THREE.MeshStandardMaterial({ map: flowerTexture(mobile ? 64 : 96), alphaTest: .4, side: THREE.DoubleSide, roughness: .7 }), U, { key: 'flower', base: 'instance', height: 'attr', flutter: .05 }), 22, 38);
+  flowerMat.map.anisotropy = 16;
   const rockMat = new THREE.MeshStandardMaterial({ map: rockTex.map, normalMap: rockTex.normalMap, roughness: .95, color: 0xa8a8a0 });
   const twigMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .95, metalness: 0 });
   const waterMat = createWaterMaterial(U);
+  waterMat.uniforms.tBottom.value = paintTex;
 
   let N = 0, size = 200, cell = 1;
   let h = null, wet = null, land = null, waterMesh = null;
@@ -197,6 +235,7 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
 
   function buildGrids(P, Q) {
     size = P.tsize;
+    waterMat.uniforms.uBottomUv.value = 1 / size;
     N = Math.round(lerp(72, Q.landSeg, P.landDetail)) + 1;
     cell = size / (N - 1);
     h = new Float32Array(N * N); wet = new Float32Array(N * N).fill(DRY);
@@ -293,7 +332,7 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
         c.setHSL(lerp(.21, .30, moist), lerp(.34, .56, moist), lerp(.24, .40, moist * .7 + dry * .3), THREE.SRGBColorSpace);
         let r = c.r, g = c.g, b = c.b;
         const sc = new THREE.Color().setHSL(.09, .30, .26 + dry * .08, THREE.SRGBColorSpace);
-        r = lerp(r, sc.r, soil); g = lerp(g, sc.g, soil); b = lerp(b, sc.b, soil);
+        r = lerp(r, sc.r, soil); g = lerp(r, sc.g, soil); b = lerp(b, sc.b, soil);
         const rc = new THREE.Color().setHSL(.08, .05, .30 + dry * .12, THREE.SRGBColorSpace);
         r = lerp(r, rc.r, rock); g = lerp(g, rc.g, rock); b = lerp(b, rc.b, rock);
         const bare = smoothstep(.5, .3, patch) * .55;
