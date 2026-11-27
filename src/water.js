@@ -7,14 +7,18 @@ export function createWaterMaterial(U) {
       uTime: U.time, uWaves: { value: .6 }, uFlow: { value: new THREE.Vector2(.2, .1) },
       uSunDir: U.sunDir, uSunColor: U.sunColor, uSkyHor: U.skyHor, uSkyZen: U.skyZen,
       uFogColor: U.fogColor, uFogDensity: U.fogDensity,
-      tBottom: { value: null }, uBottomUv: { value: 1 / 260 }
+      tBottom: { value: null }, tHeight: { value: null }, uBottomUv: { value: 1 / 260 }
     },
-    vertexShader: `attribute float aDepth; varying float vDepth; varying vec3 vWp; varying vec3 vView;
-    void main(){ vDepth = aDepth; vec4 wp = modelMatrix * vec4(position, 1.0); vWp = wp.xyz;
+    vertexShader: `attribute float aDepth; uniform float uTime, uWaves;
+    varying float vDepth; varying vec3 vWp; varying vec3 vView;
+    void main(){ vDepth = aDepth; vec4 wp = modelMatrix * vec4(position, 1.0);
+      float g = step(0.05, aDepth);
+      wp.y += g * uWaves * 0.06 * ( sin(wp.x*0.7+uTime*1.3)*0.5 + sin(wp.z*0.9-uTime*1.1)*0.35 + sin((wp.x+wp.z)*0.45+uTime*0.7)*0.4 );
+      vWp = wp.xyz;
       vec4 mv = viewMatrix * wp; vView = -mv.xyz; gl_Position = projectionMatrix * mv; }`,
     fragmentShader: `uniform float uTime, uWaves, uFogDensity, uBottomUv; uniform vec2 uFlow;
     uniform vec3 uSunDir, uSunColor, uSkyHor, uSkyZen, uFogColor;
-    uniform sampler2D tBottom;
+    uniform sampler2D tBottom, tHeight;
     varying float vDepth; varying vec3 vWp; varying vec3 vView;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
@@ -33,7 +37,10 @@ export function createWaterMaterial(U) {
       return normalize(vec3(-g.x * amp, 1.0, -g.y * amp));
     }
     void main(){
-      if (vDepth <= 0.002) discard;
+      vec2 huv = vWp.xz * uBottomUv + 0.5;
+      float bed = texture2D(tHeight, huv).r;
+      float depth = vWp.y - bed;
+      if (depth <= 0.004) discard;
       vec3 V = normalize(vView);
       float dist = length(vView);
       float lod = 1.0 / (1.0 + dist * 0.03);
@@ -45,18 +52,20 @@ export function createWaterMaterial(U) {
       vec3 sky = mix(uSkyHor, uSkyZen, pow(clamp(R.y, 0.0, 1.0), 0.55));
       float sd = max(dot(R, normalize(uSunDir)), 0.0);
       sky += uSunColor * (pow(sd, 600.0) * 18.0 + pow(sd, 32.0) * 0.35);
-      float dep = clamp(vDepth * 0.45, 0.0, 1.0);
-      vec2 buv = vWp.xz * uBottomUv + 0.5 + N.xz * (0.5 * (1.0 - dep));
+      float dep = clamp(depth * 0.45, 0.0, 1.0);
+      vec2 buv = huv + N.xz * (0.35 * (1.0 - dep));
       vec3 bottom = pow(texture2D(tBottom, buv).rgb, vec3(2.2));
-      bottom *= mix(vec3(0.55, 0.75, 0.72), vec3(0.06, 0.16, 0.17), dep) * 1.1;
-      vec3 col = mix(bottom, sky, clamp(fres, 0.0, 1.0));
+      vec3 absorb = exp(-depth * vec3(0.45, 0.22, 0.16));
+      vec3 scatter = vec3(0.05, 0.16, 0.17);
+      vec3 water = bottom * absorb + scatter * (1.0 - absorb);
+      vec3 col = mix(water, sky, clamp(fres, 0.0, 1.0));
       vec3 H = normalize(V + normalize(uSunDir));
       col += uSunColor * pow(max(dot(N, H), 0.0), 350.0) * 2.2;
-      float shore = 1.0 - smoothstep(0.02, 0.45, vDepth);
+      float shore = 1.0 - smoothstep(0.03, 0.55, depth);
       float fn = fbm2(vWp.xz * 1.7 + flow * uTime * 0.5);
-      float foam = clamp(shore * smoothstep(0.35, 0.8, fn + shore * 0.35), 0.0, 1.0);
-      col = mix(col, vec3(0.90, 0.95, 0.96), foam * 0.9);
-      float alpha = clamp(smoothstep(0.0, 0.18, vDepth) * mix(0.55, 0.95, dep) + foam * 0.6, 0.0, 1.0);
+      float foam = clamp(shore * smoothstep(0.45, 0.85, fn + shore * 0.3), 0.0, 1.0);
+      col = mix(col, vec3(0.90, 0.95, 0.96), foam * 0.85);
+      float alpha = clamp(smoothstep(0.0, 0.10, depth) * mix(0.6, 0.96, dep) + foam * 0.5, 0.0, 1.0);
       float fogF = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
       col = mix(col, uFogColor, clamp(fogF, 0.0, 1.0));
       gl_FragColor = vec4(col, alpha);
