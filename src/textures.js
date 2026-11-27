@@ -1,4 +1,3 @@
-
 import * as THREE from 'three';
 import { clamp, lerp, fbm, ridged, mulberry32, makeNoise3D } from './noise.js';
 
@@ -19,6 +18,18 @@ function photoUpgrade(t, file) {
     }, undefined, () => resolve(false));
   });
 }
+function mergeByLuma(colImg, alImg) {
+  const w = colImg.width, h = colImg.height;
+  const tmp = canvas2d(w, h), tx = tmp.getContext('2d');
+  tx.drawImage(colImg, 0, 0);
+  const id = tx.getImageData(0, 0, w, h);
+  const mc = canvas2d(w, h), mx = mc.getContext('2d');
+  mx.drawImage(alImg, 0, 0, w, h);
+  const md = mx.getImageData(0, 0, w, h).data;
+  for (let i = 0; i < w * h; i++) id.data[i * 4 + 3] = md[i * 4];
+  tx.putImageData(id, 0, 0);
+  return tmp;
+}
 export function leafAtlas(size) {
   const cell = size;
   const cv = canvas2d(cell * 2, cell * 2);
@@ -30,6 +41,10 @@ export function leafAtlas(size) {
     const w = img.width, h = img.height;
     const s = Math.min(cell / w, cell / h) * .94;
     cx2.drawImage(img, dx + (cell - w * s) / 2, dy + (cell - h * s) / 2, w * s, h * s);
+  };
+  const drawStem = (img, sx, sy, sw, sh, dx, dy) => {
+    const s = Math.min(cell / sw, cell / sh) * .94;
+    cx2.drawImage(img, sx, sy, sw, sh, dx + (cell - sw * s) / 2, dy + cell - sh * s - cell * .02, sw * s, sh * s);
   };
   for (let v = 0; v < 4; v++) {
     const [dx, dy] = cellXY(v);
@@ -55,26 +70,16 @@ export function leafAtlas(size) {
     photoLoader.load(base + name + '.png', im => putSpecies(v, im.image), undefined, () => {
       photoLoader.load(base + name + '_col.png', col => {
         photoLoader.load(base + name + '_alpha.png', al => {
-          const w = col.image.width, h = col.image.height;
-          const tmp = canvas2d(w, h), tx = tmp.getContext('2d');
-          tx.drawImage(col.image, 0, 0);
-          tx.globalCompositeOperation = 'destination-in';
-          tx.drawImage(al.image, 0, 0);
-          tx.globalCompositeOperation = 'source-over';
-          putSpecies(v, tmp);
+          putSpecies(v, mergeByLuma(col.image, al.image));
         }, undefined, () => {});
       }, undefined, () => {});
     });
   };
   photoLoader.load(base + 'leaf_col.png', col => {
     photoLoader.load(base + 'leaf_alpha.png', al => {
-      const w = col.image.width, h = col.image.height;
-      const tmp = canvas2d(w, h), tx = tmp.getContext('2d');
-      tx.drawImage(col.image, 0, 0);
-      tx.globalCompositeOperation = 'destination-in';
-      tx.drawImage(al.image, 0, 0);
-      tx.globalCompositeOperation = 'source-over';
-      const data = tx.getImageData(0, 0, w, h).data;
+      const tmp = mergeByLuma(col.image, al.image);
+      const w = tmp.width, h = tmp.height;
+      const data = tmp.getContext('2d').getImageData(0, 0, w, h).data;
       const seen = new Uint8Array(w * h);
       const comps = [];
       for (let s = 0; s < w * h; s++) {
@@ -99,9 +104,7 @@ export function leafAtlas(size) {
         if (!c) continue;
         const [dx, dy] = cellXY(v);
         cx2.clearRect(dx, dy, cell, cell);
-        const cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
-        const s = Math.min(cell / cw, cell / ch) * .92;
-        cx2.drawImage(tmp, c.minx, c.miny, cw, ch, dx + (cell - cw * s) / 2, dy + (cell - ch * s) / 2, cw * s, ch * s);
+        drawStem(tmp, c.minx, c.miny, c.maxx - c.minx + 1, c.maxy - c.miny + 1, dx, dy);
       }
       out.needsUpdate = true;
       loadSpecies(1, 'leaf_b');
