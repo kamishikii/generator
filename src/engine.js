@@ -19,9 +19,18 @@ mvPosition.xyz += vec3( sin( uTime * 6.7 + wP.y * 3.1 + wP.x * 4.3 ), 0.5 * sin(
 mvPosition = modelViewMatrix * mvPosition;
 gl_Position = projectionMatrix * mvPosition;
 `;
+const LODW = `
+#ifdef USE_INSTANCING
+vec4 lp = instanceMatrix * vec4( transformed, 1.0 );
+#else
+vec4 lp = vec4( transformed, 1.0 );
+#endif
+float vDist = length( ( modelViewMatrix * lp ).xyz );
+transformed.xz *= mix( 1.0, 2.6, smoothstep( 18.0, 60.0, vDist ) );
+`;
 
 export function windify(mat, U, o = {}) {
-  const opt = Object.assign({ key: 'w', flutter: 0, grow: true, backlight: false, base: 'object', height: 'ref', ref: 12, uvJitter: false }, o);
+  const opt = Object.assign({ key: 'w', flutter: 0, grow: true, backlight: false, base: 'object', height: 'ref', ref: 12, uvJitter: false, lodWidth: false }, o);
   const uF = { value: opt.flutter }, uRef = { value: opt.ref };
   const baseExpr = opt.base === 'instance' ? 'aBase' : 'modelMatrix[3].y';
   const hExpr = opt.height === 'attr' ? 'max( aH, 0.02 )' : 'uRef';
@@ -39,7 +48,7 @@ export function windify(mat, U, o = {}) {
       .replace('#include <common>', '#include <common>\n' + decl)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGrowH = ' + (opt.grow ? 'aGrow' : '1.0') + ';')
       .replace('#include <uv_vertex>', '#include <uv_vertex>' + (opt.uvJitter ? '\nvMapUv = vMapUv * 0.5 + aOff;\n#ifdef USE_NORMALMAP\nvNormalMapUv = vNormalMapUv * 0.5 + aOff;\n#endif' : ''))
-      .replace('#include <project_vertex>', WIND.replace('__BASE__', baseExpr).replace('__H__', hExpr));
+      .replace('#include <project_vertex>', (opt.lodWidth ? LODW : '') + WIND.replace('__BASE__', baseExpr).replace('__H__', hExpr));
     let fd = 'varying float vGrowH;', disc = '', em = '';
     if (opt.grow) {
       fd += 'uniform float uGrow;uniform vec3 uGrowColor;';
@@ -55,7 +64,7 @@ export function windify(mat, U, o = {}) {
       .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>' + disc)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + em);
   };
-  mat.customProgramCacheKey = () => 'w_' + opt.key + opt.base + opt.height + (opt.grow ? 'g' : '') + (opt.backlight ? 'l' : '') + (opt.uvJitter ? 'u' : '');
+  mat.customProgramCacheKey = () => 'w_' + opt.key + opt.base + opt.height + (opt.grow ? 'g' : '') + (opt.backlight ? 'l' : '') + (opt.uvJitter ? 'u' : '') + (opt.lodWidth ? 'd' : '');
   mat.userData.uF = uF; mat.userData.uRef = uRef;
   return mat;
 }
