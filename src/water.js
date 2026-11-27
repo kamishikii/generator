@@ -18,18 +18,18 @@ export function createWaterMaterial(U) {
     void main(){
       vec2 p = vWp.xz * 0.8 + uFlow * uTime * 0.3;
       float e = 0.15; float h0 = hgt(p);
-      vec3 N = normalize(vec3((hgt(p+vec2(e,0.0))-h0)*uWaves*0.6, 1.0, (hgt(p+vec2(0.0,e))-h0)*uWaves*0.6));
+      vec3 N = normalize(vec3((hgt(p+vec2(e,0.0))-h0)*uWaves*0.35, 1.0, (hgt(p+vec2(0.0,e))-h0)*uWaves*0.35));
       vec3 V = normalize(vView);
-      float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-      vec3 deep = vec3(0.02, 0.10, 0.12);
-      vec3 shallow = vec3(0.10, 0.30, 0.30);
-      vec3 sky = mix(uSkyHor, uSkyZen, 0.5);
-      vec3 col = mix(mix(deep, shallow, clamp(vDepth*0.5, 0.0, 1.0)), sky, clamp(fres*0.85+0.08, 0.0, 1.0));
+      float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);
+      float dep = clamp(vDepth * 0.55, 0.0, 1.0);
+      vec3 bottom = mix(vec3(0.32, 0.27, 0.18), vec3(0.04, 0.10, 0.09), dep);
+      vec3 sky = mix(uSkyHor, uSkyZen, 0.5) * 0.7;
+      vec3 col = mix(bottom, sky, clamp(fres*0.55 + 0.04, 0.0, 0.8));
       vec3 H = normalize(V + normalize(uSunDir));
-      col += uSunColor * pow(max(dot(N, H), 0.0), 180.0) * 1.2;
-      float foam = smoothstep(0.25, 0.0, vDepth) * (0.5 + 0.5*sin(p.x*6.0 + uTime*2.0));
-      col = mix(col, vec3(0.9), clamp(foam*0.6, 0.0, 0.6));
-      float alpha = mix(0.55, 0.92, clamp(fres + vDepth*0.3, 0.0, 1.0));
+      col += uSunColor * pow(max(dot(N, H), 0.0), 220.0) * 0.9;
+      float foam = smoothstep(0.12, 0.0, vDepth) * (0.5 + 0.5*sin(p.x*6.0 + uTime*2.0));
+      col = mix(col, vec3(0.85), clamp(foam*0.5, 0.0, 0.5));
+      float alpha = mix(0.38, 0.85, clamp(dep + fres*0.35, 0.0, 1.0));
       float fd = length(vView);
       float fogF = 1.0 - exp(-uFogDensity*uFogDensity*fd*fd);
       col = mix(col, uFogColor, clamp(fogF, 0.0, 1.0));
