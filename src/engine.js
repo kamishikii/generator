@@ -199,12 +199,12 @@ export function createEngine(canvas, stage, U, opts) {
     void main(){vec2 uv=vUv;vec2 st=(uv-uSun)*(uDensity/24.0);vec3 s=vec3(0.0);float il=1.0;
     for(int i=0;i<24;i++){uv-=st;s+=texture2D(tSrc,clamp(uv,0.0,1.0)).rgb*il*uWeight;il*=uDecay;}gl_FragColor=vec4(s,1.0);}` });
   const compMat = new THREE.ShaderMaterial({
-    uniforms: { tScene: { value: null }, tBloom: { value: null }, tRays: { value: null }, uBloom: { value: .6 }, uRays: { value: .6 }, uSunVis: { value: 1 }, uExposure: { value: 1 }, uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uGrain: { value: opts.grain }, uVig: { value: .42 }, uAspect: { value: 1 } },
+    uniforms: { tScene: { value: null }, tBloom: { value: null }, tRays: { value: null }, uBloom: { value: .6 }, uRays: { value: .6 }, uSunVis: { value: 1 }, uExposure: { value: 1 }, uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uGrain: { value: (opts.grain || 0) * 0.4 }, uVig: { value: .42 }, uAspect: { value: 1 }, uCA: { value: opts.mobile ? 0 : 0.002 } },
     vertexShader: VS, depthTest: false, depthWrite: false,
-    fragmentShader: `uniform sampler2D tScene,tBloom,tRays;uniform float uBloom,uRays,uSunVis,uExposure,uTime,uGrain,uVig,uAspect;uniform vec2 uRes;varying vec2 vUv;
+    fragmentShader: `uniform sampler2D tScene,tBloom,tRays;uniform float uBloom,uRays,uSunVis,uExposure,uTime,uGrain,uVig,uAspect,uCA;uniform vec2 uRes;varying vec2 vUv;
     vec3 aces(vec3 x){return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0);}
     vec3 srgb(vec3 c){return mix(c*12.92,1.055*pow(max(c,vec3(0.0)),vec3(1.0/2.4))-0.055,step(0.0031308,c));}
-    void main(){vec2 d=vUv-0.5;float r=length(d);vec2 ca=d*r*0.0035;vec3 base;
+    void main(){vec2 d=vUv-0.5;float r=length(d);vec2 ca=d*r*uCA;vec3 base;
     base.r=texture2D(tScene,vUv+ca).r;base.g=texture2D(tScene,vUv).g;base.b=texture2D(tScene,vUv-ca).b;
     base+=texture2D(tBloom,vUv).rgb*uBloom;base+=texture2D(tRays,vUv).rgb*uRays*uSunVis;
     base=aces(base*uExposure);
@@ -267,7 +267,7 @@ export function createEngine(canvas, stage, U, opts) {
   function resize() {
     const r = stage.getBoundingClientRect();
     const w = Math.max(1, Math.floor(r.width)), h = Math.max(1, Math.floor(r.height));
-    const pr = Math.min(devicePixelRatio || 1, Q.pr, opts.mobile ? 1.6 : 2);
+    const pr = Math.min(devicePixelRatio || 1, Q.pr, 2);
     renderer.setPixelRatio(pr); renderer.setSize(w, h, false);
     camera.aspect = w / h; camera.updateProjectionMatrix();
     const bw = Math.max(2, Math.floor(w * pr)), bh = Math.max(2, Math.floor(h * pr));
@@ -280,6 +280,8 @@ export function createEngine(canvas, stage, U, opts) {
   }
   function setQuality(q) {
     Q = Object.assign({}, q, { msaa: Math.max(4, q.msaa || 0), pr: Math.max(1.5, q.pr || 1) });
+    compMat.uniforms.uGrain.value = q.grain != null ? q.grain : (opts.grain || 0) * 0.4;
+    compMat.uniforms.uCA.value = q.ca != null ? q.ca : (opts.mobile ? 0 : 0.002);
     key.shadow.mapSize.set(q.shadow, q.shadow);
     if (key.shadow.map) { key.shadow.map.dispose(); key.shadow.map = null; }
     sceneRT.dispose(); sceneRT = mkRT(Q.msaa || 1); resize(); renderer.shadowMap.needsUpdate = true;
