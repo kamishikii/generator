@@ -28,6 +28,7 @@ export const TREE_KEYS = ['height', 'trunk', 'crown', 'detail', 'chaos', 'droop'
 
 export function createForest(U, barkTex, mobile) {
   const group = new THREE.Group();
+  for (const t of [barkTex.map, barkTex.normalMap, barkTex.roughnessMap]) if (t) t.anisotropy = 16;
   const barkMat = windify(new THREE.MeshStandardMaterial({
     color: 0xffffff, map: barkTex.map, normalMap: barkTex.normalMap, roughnessMap: barkTex.roughnessMap,
     normalScale: new THREE.Vector2(1.5, 1.5), roughness: 1, metalness: 0, vertexColors: true, dithering: true
@@ -37,12 +38,14 @@ export function createForest(U, barkTex, mobile) {
   const leafTex = {}, leafMats = {};
   for (const k of kinds) {
     leafTex[k] = (k === 'cluster' || k === 'broad') ? leafAtlas(mobile ? 256 : 512) : leafTexture(k, mobile ? 160 : 256);
+    leafTex[k].anisotropy = 16;
     leafMats[k] = windify(new THREE.MeshStandardMaterial({ map: leafTex[k], alphaTest: .42, side: THREE.DoubleSide, roughness: .66, metalness: 0 }),
       U, { key: 'leaf' + k, base: 'object', height: 'ref', ref: 12, flutter: .05, backlight: true, uvJitter: (k === 'cluster' || k === 'broad') });
   }
   new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'tex/leaf_nor.png', nt => {
     nt.colorSpace = THREE.NoColorSpace;
     nt.wrapS = nt.wrapT = THREE.ClampToEdgeWrapping;
+    nt.anisotropy = 16;
     for (const k of ['cluster', 'broad']) {
       leafMats[k].normalMap = nt;
       leafMats[k].normalScale = new THREE.Vector2(.7, .7);
@@ -304,7 +307,7 @@ export function createForest(U, barkTex, mobile) {
       lm = new THREE.InstancedMesh(lg, leafMats[P.leafShape] || leafMats.broad, want2);
       const lc = new Float32Array(want2 * 3), la = new Float32Array(want2), lo = new Float32Array(want2 * 2);
       const d = new THREE.Object3D(), c = new THREE.Color();
-      const dir = new THREE.Vector3(), br = new THREE.Vector3(), out = new THREE.Vector3();
+      const dir = new THREE.Vector3(), br = new THREE.Vector3(), n1 = new THREE.Vector3(), n2 = new THREE.Vector3(), AX = new THREE.Vector3();
       const bcol = new THREE.Color(P.leafColor), hsl = { h: 0, s: 0, l: 0 };
       bcol.getHSL(hsl, THREE.SRGBColorSpace);
       const hs = H / 13, needle = P.leafShape === 'needle', cluster = P.leafShape === 'cluster';
@@ -314,13 +317,17 @@ export function createForest(U, barkTex, mobile) {
         const px = lerp(pp.x, n.x, s), py = lerp(pp.y, n.y, s), pz = lerp(pp.z, n.z, s);
         br.set(n.x - pp.x, n.y - pp.y, n.z - pp.z);
         if (br.lengthSq() < 1e-8) br.set(0, 1, 0); else br.normalize();
-        out.set(px, 0, pz);
-        if (out.lengthSq() < 1e-6) out.set(rng() - .5, 0, rng() - .5);
-        out.normalize();
-        dir.copy(out).multiplyScalar(.85);
-        dir.y -= .45 + rng() * .35;
-        dir.addScaledVector(br, .25);
-        dir.x += (rng() - .5) * .5; dir.z += (rng() - .5) * .5;
+        // FIX: листья растут РАДИАЛЬНО ВОКРУГ оси ветки, а не одним гребнем наружу-вниз
+        const ref = Math.abs(br.y) > .9 ? AX.set(1, 0, 0) : AX.set(0, 1, 0);
+        n1.crossVectors(br, ref).normalize();
+        n2.crossVectors(br, n1).normalize();
+        const th = rng() * TAU;
+        dir.copy(n1).multiplyScalar(Math.cos(th)).addScaledVector(n2, Math.sin(th));
+        dir.multiplyScalar(.55 + rng() * .55);
+        dir.addScaledVector(br, .18 + rng() * .35);
+        dir.y += .12 + rng() * .30;
+        dir.y -= Math.max(0, P.droop) * (.25 + rng() * .3);
+        dir.x += (rng() - .5) * .35; dir.z += (rng() - .5) * .35;
         dir.normalize();
         d.position.set(px, py, pz);
         d.quaternion.setFromUnitVectors(UPV, dir);
@@ -450,8 +457,7 @@ export function createForest(U, barkTex, mobile) {
   function totals() {
     let wood = 0, leaf = 0, nodes = 0, branches = 0, leaves = 0, seg = 0, auto = false, ms = 0;
     for (const t of trees) {
-      wood += t.stats.woodTris; leaf += t.stats.leafTris; nodes += t.stats.nodes;
-      branches += t.stats.branches; leaves += t.stats.leaves;
+      wood += t.stats.woodTris; leaf += t.stats.leafTris; nodes += t.stats.nodes; branches += t.stats.branches; leaves += t.stats.leaves;
       seg = Math.max(seg, t.stats.seg); auto = auto || t.stats.auto; ms += t.stats.ms;
     }
     return { woodTris: wood, leafTris: leaf, nodes, branches, leaves, seg, auto, ms };
