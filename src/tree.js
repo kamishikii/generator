@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clamp, lerp, TAU, mulberry32, makeNoise3D, fbm, ridged } from './noise.js';
 import { windify } from './engine.js';
-import { leafTexture, leafVariants } from './textures.js';
+import { leafTexture, leafAtlas } from './textures.js';
 
 class Hash {
   constructor(c) { this.inv = 1 / c; this.m = new Map(); }
@@ -36,7 +36,7 @@ export function createForest(U, barkTex, mobile) {
   const kinds = ['cluster', 'broad', 'needle', 'bloom'];
   const leafTex = {}, leafMats = {};
   for (const k of kinds) {
-    leafTex[k] = (k === 'cluster' || k === 'broad') ? leafVariants(mobile ? 256 : 512) : leafTexture(k, mobile ? 160 : 256);
+    leafTex[k] = (k === 'cluster' || k === 'broad') ? leafAtlas(mobile ? 256 : 512) : leafTexture(k, mobile ? 160 : 256);
     leafMats[k] = windify(new THREE.MeshStandardMaterial({ map: leafTex[k], alphaTest: .42, side: THREE.DoubleSide, roughness: .66, metalness: 0 }),
       U, { key: 'leaf' + k, base: 'object', height: 'ref', ref: 12, flutter: .05, backlight: true, uvJitter: (k === 'cluster' || k === 'broad') });
   }
@@ -236,7 +236,7 @@ export function createForest(U, barkTex, mobile) {
       T.set(chain[1].x - chain[0].x, chain[1].y - chain[0].y, chain[1].z - chain[0].z).normalize();
       Nv.set(0, 1, 0); if (Math.abs(T.dot(Nv)) > .9) Nv.set(1, 0, 0);
       Nv.crossVectors(T, Nv).normalize(); pT.copy(T);
-      const base = pos.length / 3, stride = radial + 1, uS = TAU * r0 / 2.2;
+      const base = pos.length / 3, stride = radial + 1, uS = TAU * r0 / 4.6;
       for (let i = 0; i < chain.length; i++) {
         const c = chain[i];
         if (i === 0) T.set(chain[1].x - c.x, chain[1].y - c.y, chain[1].z - c.z);
@@ -264,10 +264,10 @@ export function createForest(U, barkTex, mobile) {
           const nx = Nv.x * ca + B.x * sa, ny = Nv.y * ca + B.y * sa, nz = Nv.z * ca + B.z * sa;
           const px = c.x + nx * rr, py = c.y + ny * rr, pz = c.z + nz * rr;
           pos.push(px, py, pz); nor.push(nx, ny, nz);
-          uv.push(j / radial * uS + t.id * .37, c.dist / 2.2); gr.push(c.grow);
+          uv.push(j / radial * uS + t.id * .37, c.dist / 4.6); gr.push(c.grow);
           const mn = fbm(noise, px * .8, py * .6, pz * .8, 3) * .5 + .5;
           const m = clamp(mn * (1 - clamp(py / 2.8, 0, 1)) * (.45 + .55 * Math.max(0, -nz)), 0, 1) * P.moss;
-          const mac = .82 + .36 * (fbm(noise, px * .12, py * .1, pz * .12, 2) * .5 + .5);
+          const mac = .70 + .50 * (fbm(noise, px * .09, py * .07, pz * .09, 2) * .5 + .5);
           col.push(bc.r * lerp(1, .38, m) * mac, bc.g * lerp(1, .58, m) * mac, bc.b * lerp(1, .30, m) * mac);
         }
       }
@@ -279,7 +279,7 @@ export function createForest(U, barkTex, mobile) {
       if (!last.children || !last.children.length) {
         const ti = pos.length / 3;
         pos.push(last.x + T.x * last.r * 1.7, last.y + T.y * last.r * 1.7, last.z + T.z * last.r * 1.7);
-        nor.push(T.x, T.y, T.z); uv.push(.5, last.dist / 2.2 + .1); gr.push(Math.min(1, last.grow + .005)); col.push(bc.r, bc.g, bc.b);
+        nor.push(T.x, T.y, T.z); uv.push(.5, last.dist / 4.6 + .1); gr.push(Math.min(1, last.grow + .005)); col.push(bc.r, bc.g, bc.b);
         const rb = base + (chain.length - 1) * stride;
         for (let j = 0; j < radial; j++) idx.push(rb + j, rb + j + 1, ti);
       }
@@ -303,7 +303,8 @@ export function createForest(U, barkTex, mobile) {
       const lg = leafGeo.clone();
       lm = new THREE.InstancedMesh(lg, leafMats[P.leafShape] || leafMats.broad, want2);
       const lc = new Float32Array(want2 * 3), la = new Float32Array(want2), lo = new Float32Array(want2 * 2);
-      const d = new THREE.Object3D(), c = new THREE.Color(), dir = new THREE.Vector3();
+      const d = new THREE.Object3D(), c = new THREE.Color();
+      const dir = new THREE.Vector3(), br = new THREE.Vector3(), out = new THREE.Vector3();
       const bcol = new THREE.Color(P.leafColor), hsl = { h: 0, s: 0, l: 0 };
       bcol.getHSL(hsl, THREE.SRGBColorSpace);
       const hs = H / 13, needle = P.leafShape === 'needle', cluster = P.leafShape === 'cluster';
@@ -311,12 +312,19 @@ export function createForest(U, barkTex, mobile) {
       for (let i = 0; i < want2; i++) {
         const n = anchors[(rng() * anchors.length) | 0], pp = n.parent || n, s = rng();
         const px = lerp(pp.x, n.x, s), py = lerp(pp.y, n.y, s), pz = lerp(pp.z, n.z, s);
-        dir.set(n.x - pp.x, n.y - pp.y, n.z - pp.z);
-        if (dir.lengthSq() < 1e-8) dir.set(0, 1, 0); else dir.normalize();
-        d.position.set(px + (rng() - .5) * .05, py + (rng() - .5) * .05, pz + (rng() - .5) * .05);
+        br.set(n.x - pp.x, n.y - pp.y, n.z - pp.z);
+        if (br.lengthSq() < 1e-8) br.set(0, 1, 0); else br.normalize();
+        out.set(px, 0, pz);
+        if (out.lengthSq() < 1e-6) out.set(rng() - .5, 0, rng() - .5);
+        out.normalize();
+        dir.copy(out).multiplyScalar(.85);
+        dir.y -= .45 + rng() * .35;
+        dir.addScaledVector(br, .25);
+        dir.x += (rng() - .5) * .5; dir.z += (rng() - .5) * .5;
+        dir.normalize();
+        d.position.set(px, py, pz);
         d.quaternion.setFromUnitVectors(UPV, dir);
         d.rotateY(rng() * TAU);
-        d.rotateX((rng() - .5) * .7);
         const sc = P.leafSize * hs * (.7 + rng() * .6) * (cluster ? .6 : .3);
         d.scale.set(sc * (needle ? .34 : 1), sc * (needle ? 1.75 : 1), sc);
         d.updateMatrix(); lm.setMatrixAt(i, d.matrix);
@@ -334,14 +342,14 @@ export function createForest(U, barkTex, mobile) {
       lm.instanceColor = new THREE.InstancedBufferAttribute(lc, 3);
       lm.instanceMatrix.needsUpdate = true;
       lm.castShadow = true; lm.receiveShadow = true; lm.frustumCulled = false;
-      const twg = new THREE.CylinderGeometry(.008, .016, 1, 4, 1, true);
+      const twg = new THREE.CylinderGeometry(.006, .012, 1, 4, 1, true);
       twg.translate(0, .5, 0);
       ltw = new THREE.InstancedMesh(twg, twigLeafMat, want2);
       const twm = new THREE.Matrix4(), twp = new THREE.Vector3(), twq = new THREE.Quaternion(), tws = new THREE.Vector3();
       for (let i = 0; i < want2; i++) {
         lm.getMatrixAt(i, twm);
         twm.decompose(twp, twq, tws);
-        tws.set(tws.y * .05, tws.y * .95, tws.y * .05);
+        tws.set(tws.y * .04, tws.y * .5, tws.y * .04);
         twm.compose(twp, twq, tws);
         ltw.setMatrixAt(i, twm);
       }
