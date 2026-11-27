@@ -81,7 +81,7 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
   const paintTex = toTex(paintCv, true, false);
   paintTex.flipY = false;
   const landMat = new THREE.MeshStandardMaterial({
-    map: paintTex, normalMap: groundTex.normalMap, normalScale: new THREE.Vector2(2.2, 2.2),
+    map: paintTex, normalMap: groundTex.normalMap, normalScale: new THREE.Vector2(0.8, 0.8),
     vertexColors: true, roughness: 1, metalness: 0, dithering: true
   });
   const NL = String.fromCharCode(10);
@@ -92,8 +92,19 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
   const whiteTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
   whiteTex.needsUpdate = true;
   const detailU = { value: groundTex.map }, mixU = { value: 0 };
+  const detailB = { value: whiteTex }, hasB = { value: 0 };
+  const detailC = { value: whiteTex }, hasC = { value: 0 };
   const dispU = { value: whiteTex }, dispOn = { value: 0 };
   if (groundTex.ready) groundTex.ready.then(ok => { if (ok) mixU.value = 1; });
+  const loadGround = (file, u, has) => {
+    new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'tex/' + file, dt => {
+      dt.wrapS = dt.wrapT = THREE.RepeatWrapping;
+      dt.colorSpace = THREE.SRGBColorSpace;
+      u.value = dt; has.value = 1;
+    }, undefined, () => {});
+  };
+  loadGround('ground_b_col.jpg', detailB, hasB);
+  loadGround('ground_c_col.jpg', detailC, hasC);
   new THREE.TextureLoader().load(import.meta.env.BASE_URL + 'tex/ground_disp.jpg', dt => {
     dt.wrapS = dt.wrapT = THREE.RepeatWrapping;
     dispU.value = dt; dispOn.value = 1;
@@ -101,17 +112,25 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
   landMat.onBeforeCompile = sh => {
     sh.uniforms.tDetail = detailU;
     sh.uniforms.uDetailMix = mixU;
+    sh.uniforms.tDetailB = detailB; sh.uniforms.uHasB = hasB;
+    sh.uniforms.tDetailC = detailC; sh.uniforms.uHasC = hasC;
     sh.uniforms.tDisp = dispU;
     sh.uniforms.uDispOn = dispOn;
     sh.vertexShader = sh.vertexShader
       .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDisp;' + NL + 'uniform float uDispOn;' + NL + STOCH)
       .replace(INC_BEGIN, INC_BEGIN + NL + 'transformed += normal * (stoch(tDisp, uv * 55.0).r - 0.5) * 0.18 * uDispOn;');
     sh.fragmentShader = sh.fragmentShader
-      .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDetail;' + NL + 'uniform float uDetailMix;' + NL + 'uniform sampler2D tDisp;' + NL + 'uniform float uDispOn;' + NL + STOCH)
+      .replace(INC_COMMON, INC_COMMON + NL + 'uniform sampler2D tDetail;' + NL + 'uniform float uDetailMix;' + NL + 'uniform sampler2D tDetailB;' + NL + 'uniform float uHasB;' + NL + 'uniform sampler2D tDetailC;' + NL + 'uniform float uHasC;' + NL + 'uniform sampler2D tDisp;' + NL + 'uniform float uDispOn;' + NL + STOCH)
       .replace(INC_MAP, INC_MAP + NL + [
-        'vec3 det = stoch(tDetail, vMapUv * 55.0) * 1.6;',
+        'vec2 gp = vMapUv * 55.0;',
+        'vec3 dA = stoch(tDetail, gp);',
+        'vec3 dB = stoch(tDetailB, gp * 0.83 + 17.0);',
+        'vec3 dC = stoch(tDetailC, gp * 1.21 + 41.0);',
+        'float mB = smoothstep(0.35, 0.65, stHash(floor(vMapUv * 9.0)).x) * uHasB;',
+        'float mC = smoothstep(0.40, 0.70, stHash(floor(vMapUv * 7.0) + 3.0).y) * uHasC;',
+        'vec3 det = mix(mix(dA, dB, mB), dC, mC * 0.6) * 1.6;',
         'diffuseColor.rgb *= mix(vec3(1.0), det, uDetailMix);',
-        'diffuseColor.rgb *= mix(1.0, 0.7 + 0.6 * stoch(tDisp, vMapUv * 55.0).r, uDispOn);'
+        'diffuseColor.rgb *= mix(1.0, 0.7 + 0.6 * stoch(tDisp, gp).r, uDispOn);'
       ].join(NL));
   };
   const grassMat = windify(new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .78, metalness: 0, side: THREE.DoubleSide }), U, { key: 'grass', base: 'instance', height: 'attr', flutter: .09, lodWidth: true });
@@ -122,7 +141,7 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
 
   let N = 0, size = 200, cell = 1;
   let h = null, wet = null, land = null, waterMesh = null;
-  let grass = null, rocks = null, flowers = null, twigs = null;
+  let grass = null, rocks = null, flowers = null, twigs = null, riverRocks = null;
   let noise = makeNoise3D(1);
   let paintDirty = false, waterBox = null, waterBudget = 0;
   const stats = { tris: 0, grass: 0, flowers: 0, rocks: 0, ms: 0, water: 0, wet: 0 };
@@ -142,6 +161,10 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
     const e = cell;
     return new THREE.Vector3(heightAt(x - e, z) - heightAt(x + e, z), 2 * e, heightAt(x, z - e) - heightAt(x, z + e)).normalize();
   }
+  function riverCenter(x, P) {
+    const t = x / Math.max(30, P.tscale);
+    return P.riverOffset + Math.sin(t * 1.15) * P.riverMeander * 26 + fbm(noise, t * .9, 3.3, 0, 3) * P.riverMeander * 34;
+  }
   function makeField(P) {
     const n = makeNoise3D(P.seed * 131 + 7);
     const s = 1 / Math.max(12, P.tscale), amp = P.relief, gain = lerp(.38, .62, P.tdetail);
@@ -154,8 +177,7 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
       v *= amp;
       v += fbm(n, x * .35, 5, z * .35, 2) * amp * .05;
       if (P.river) {
-        const t = x / Math.max(30, P.tscale);
-        const cz = P.riverOffset + Math.sin(t * 1.15) * P.riverMeander * 26 + fbm(n, t * .9, 3.3, 0, 3) * P.riverMeander * 34;
+        const cz = riverCenter(x, P);
         const d = Math.abs(z - cz), w = Math.max(1.5, P.riverWidth);
         const carve = Math.exp(-Math.pow(d / (w * 1.45), 2));
         const bed = P.waterLevel - P.riverDepth;
@@ -202,7 +224,7 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
     dispose(land);
     land = new THREE.Mesh(g, landMat);
     land.receiveShadow = true; land.frustumCulled = false; group.add(land);
-    landMat.normalMap.repeat.set(55, 55);
+    landMat.normalMap.repeat.set(12, 12);
     const wp = new Float32Array(N * N * 3), wd = new Float32Array(N * N);
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const v = gi(i, j); wp[v * 3] = wx(i); wp[v * 3 + 2] = wz(j); }
     const wg = new THREE.BufferGeometry();
@@ -372,6 +394,35 @@ export function createTerrainSystem(U, groundTex, rockTex, mobile) {
       group.add(rm); rocks = rm;
     }
     stats.rocks = nR;
+    dispose(riverRocks); riverRocks = null;
+    if (P.river && P.water) {
+      const nRR = 30;
+      const rg2 = new THREE.IcosahedronGeometry(1, 1);
+      const rp2 = rg2.attributes.position;
+      for (let i = 0; i < rp2.count; i++) {
+        const x = rp2.getX(i), y = rp2.getY(i), z = rp2.getZ(i);
+        const k = 1 + fbm(noise, x * 2.1, y * 2.1, z * 2.1, 3) * .4;
+        rp2.setXYZ(i, x * k, y * k * .7, z * k);
+      }
+      rg2.computeVertexNormals();
+      const rm2 = new THREE.InstancedMesh(rg2, rockMat, nRR);
+      const rc2 = new Float32Array(nRR * 3), d = new THREE.Object3D(), c = new THREE.Color();
+      for (let i = 0; i < nRR; i++) {
+        const x = (rng() * 2 - 1) * size * .42;
+        const cz = riverCenter(x, P);
+        const z = cz + (rng() - .5) * P.riverWidth * 1.4;
+        const s = .3 + rng() * .9;
+        d.position.set(x, P.waterLevel + s * .25, z);
+        d.rotation.set(rng() * .6, rng() * TAU, rng() * .6);
+        d.scale.set(s * (.8 + rng() * .6), s * (.6 + rng() * .5), s * (.8 + rng() * .6));
+        d.updateMatrix(); rm2.setMatrixAt(i, d.matrix);
+        c.setHSL(.09, .05, .28 + rng() * .2, THREE.SRGBColorSpace);
+        rc2[i * 3] = c.r; rc2[i * 3 + 1] = c.g; rc2[i * 3 + 2] = c.b;
+      }
+      rm2.instanceColor = new THREE.InstancedBufferAttribute(rc2, 3);
+      rm2.castShadow = true; rm2.receiveShadow = true; rm2.frustumCulled = false;
+      group.add(rm2); riverRocks = rm2;
+    }
     dispose(twigs); twigs = null;
     const nT = Math.round(P.rocks * 4) + 60;
     {
