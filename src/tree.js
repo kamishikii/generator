@@ -329,10 +329,10 @@ export function createForest(U, barkTex, mobile) {
         dir.y -= Math.max(0, P.droop) * (.25 + rng() * .3);
         dir.x += (rng() - .5) * .35; dir.z += (rng() - .5) * .35;
         dir.normalize();
-        d.position.set(px, py, pz);
+       const sc = P.leafSize * hs * (.7 + rng() * .6) * (cluster ? .6 : .3);
+        d.position.set(px - dir.x * sc * .45, py - dir.y * sc * .45, pz - dir.z * sc * .45);
         d.quaternion.setFromUnitVectors(UPV, dir);
         d.rotateY(rng() * TAU);
-        const sc = P.leafSize * hs * (.7 + rng() * .6) * (cluster ? .6 : .3);
         d.scale.set(sc * (needle ? .34 : 1), sc * (needle ? 1.75 : 1), sc);
         d.updateMatrix(); lm.setMatrixAt(i, d.matrix);
         const q = QUAD[(rng() * 4) | 0];
