@@ -48,6 +48,31 @@ export function pushInstanced(out, im, parentMatrix, cap, mat, name) {
   }
   out.push({ name, P, N: Nr, U, C, I, mat });
 }
+
+// Вода: только мокрые треугольники, глубина запечена в COLOR_0.
+function pushWater(out, terrain, name) {
+  const wm = terrain.waterMesh; if (!wm || !wm.visible) return;
+  const g = wm.geometry, dep = g.attributes.aDepth, ix = g.index;
+  if (!dep || !ix) return;
+  const keep = [];
+  for (let t = 0; t < ix.count; t += 3) {
+    const a = ix.getX(t), b = ix.getX(t + 1), c = ix.getX(t + 2);
+    if (dep.getX(a) > .004 && dep.getX(b) > .004 && dep.getX(c) > .004) keep.push(a, b, c);
+  }
+  if (!keep.length) return;
+  const n = g.attributes.position.count;
+  const C = new Float32Array(n * 3);
+  for (let i = 0; i < dep.count; i++) { const d = Math.min(1, dep.getX(i) / 2.5); C[i*3]=d; C[i*3+1]=d; C[i*3+2]=d; }
+  const sub = new THREE.BufferGeometry();
+  sub.setAttribute('position', g.attributes.position);
+  sub.setAttribute('normal', g.attributes.normal);
+  sub.setAttribute('uv', g.attributes.uv);
+  sub.setAttribute('color', new THREE.BufferAttribute(C, 3));
+  sub.setIndex(keep);
+  wm.updateMatrixWorld(true);
+  pushMesh(out, sub, wm.matrixWorld, { key: 'water', color: [1,1,1], rough: .1, doubleSided: true, opacity: .85, water: true }, name);
+}
+
 export function collectWorld({ forest, terrain, water }, opt) {
   const parts = [];
   const bm = forest.barkMat;
@@ -66,13 +91,9 @@ export function collectWorld({ forest, terrain, water }, opt) {
   }
   terrain.group.updateMatrixWorld(true);
   if (opt.land && terrain.land) pushMesh(parts, terrain.land.geometry, terrain.land.matrixWorld, { key: 'land', color: [1, 1, 1], map: terrain.materials.landMat.map, normalMap: terrain.materials.landMat.normalMap, rough: 1 }, 'Terrain');
-  if (opt.rocks && terrain.rocks) pushInstanced(parts, terrain.rocks, terrain.rocks.matrixWorld, 400, { key: 'rock', color: [.66, .66, .63], map: terrain.materials.rockMat.map, normalMap: terrain.materials.rockMat.normalMap, rough: .95 }, 'Rocks');
   if (opt.grass && terrain.grass) pushInstanced(parts, terrain.grass, terrain.grass.matrixWorld, opt.grassCap, { key: 'grass', color: [1, 1, 1], rough: .8, doubleSided: true }, 'Grass');
   if (opt.grass && terrain.flowers) pushInstanced(parts, terrain.flowers, terrain.flowers.matrixWorld, 2500, { key: 'flower', color: [1, 1, 1], map: terrain.materials.flowerMat.map, alpha: .4, rough: .7, doubleSided: true }, 'Flowers');
-  if (opt.water && water && water.mesh && water.mesh.visible) {
-    water.mesh.updateMatrixWorld(true);
-    pushMesh(parts, water.mesh.geometry, water.mesh.matrixWorld, { key: 'water', color: [.12, .35, .45], rough: .12, doubleSided: true, opacity: .82 }, 'Water');
-  }
+  if (opt.water) pushWater(parts, terrain, 'Water');
   return parts;
 }
 export function partsStats(parts) {
@@ -86,11 +107,11 @@ export function toOBJ(parts, meta) {
   for (const p of parts) {
     L.push('o ' + p.name);
     const n = p.P.length / 3;
-    for (let i = 0; i < n; i++) L.push(`v ${p.P[i * 3].toFixed(4)} ${p.P[i * 3 + 1].toFixed(4)} ${p.P[i * 3 + 2].toFixed(4)}`);
-    if (p.N) for (let i = 0; i < n; i++) L.push(`vn ${p.N[i * 3].toFixed(3)} ${p.N[i * 3 + 1].toFixed(3)} ${p.N[i * 3 + 2].toFixed(3)}`);
-    if (p.U) for (let i = 0; i < n; i++) L.push(`vt ${p.U[i * 2].toFixed(4)} ${p.U[i * 2 + 1].toFixed(4)}`);
+    for (let i = 0; i < n; i++) L.push(`v ${p.P[i*3].toFixed(4)} ${p.P[i*3+1].toFixed(4)} ${p.P[i*3+2].toFixed(4)}`);
+    if (p.N) for (let i = 0; i < n; i++) L.push(`vn ${p.N[i*3].toFixed(3)} ${p.N[i*3+1].toFixed(3)} ${p.N[i*3+2].toFixed(3)}`);
+    if (p.U) for (let i = 0; i < n; i++) L.push(`vt ${p.U[i*2].toFixed(4)} ${p.U[i*2+1].toFixed(4)}`);
     for (let i = 0; i < p.I.length; i += 3) {
-      const a = off + p.I[i] + 1, b = off + p.I[i + 1] + 1, c = off + p.I[i + 2] + 1;
+      const a = off + p.I[i] + 1, b = off + p.I[i+1] + 1, c = off + p.I[i+2] + 1;
       L.push(p.N && p.U ? `f ${a}/${a}/${a} ${b}/${b}/${b} ${c}/${c}/${c}` : `f ${a} ${b} ${c}`);
     }
     off += n;
@@ -139,7 +160,7 @@ export async function toGLB(parts, meta, onProgress) {
     if (onProgress) onProgress(pi / parts.length, p.name);
     const n = p.P.length / 3;
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
-    for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) { const v = p.P[i * 3 + k]; if (v < min[k]) min[k] = v; if (v > max[k]) max[k] = v; }
+    for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) { const v = p.P[i*3+k]; if (v < min[k]) min[k] = v; if (v > max[k]) max[k] = v; }
     const attrs = { POSITION: accessor(p.P, 'VEC3', 5126, n, 34962, { min, max }) };
     if (p.N) attrs.NORMAL = accessor(p.N, 'VEC3', 5126, n, 34962);
     if (p.U) attrs.TEXCOORD_0 = accessor(p.U, 'VEC2', 5126, n, 34962);
